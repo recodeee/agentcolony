@@ -1,0 +1,13 @@
+node_modules
+dist
+.cache
+*.log
+.DS_Store
+coverage
+.turbo
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+~/.caveman-mem
+.caveman-mem-dev

@@ -1,0 +1,45 @@
+{
+  "name": "caveman-mem",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-agent persistent memory with compressed storage.",
+  "license": "MIT",
+  "author": "Julius Brussee",
+  "homepage": "https://github.com/JuliusBrussee/caveman-mem",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JuliusBrussee/caveman-mem.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JuliusBrussee/caveman-mem/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "viewer",
+    "evals"
+  ],
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/*\" --filter \"./apps/*\" build",
+    "dev": "pnpm --filter @caveman-mem/cli dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "clean": "pnpm -r exec rm -rf dist && rm -rf node_modules/.cache",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@changesets/cli": "^2.27.9",
+    "@types/node": "^22.9.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}

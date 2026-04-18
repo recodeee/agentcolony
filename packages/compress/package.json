@@ -1,0 +1,30 @@
+{
+  "name": "@caveman-mem/compress",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./lexicon": {
+      "types": "./dist/lexicon.d.ts",
+      "import": "./dist/lexicon.js"
+    }
+  },
+  "files": ["dist", "src/lexicon.json"],
+  "scripts": {
+    "build": "tsup src/index.ts src/lexicon.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts src/lexicon.ts --format esm --dts --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
