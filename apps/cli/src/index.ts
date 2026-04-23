@@ -4,12 +4,15 @@ import { pathToFileURL } from 'node:url';
 import { Command } from 'commander';
 import { registerCompressCommands } from './commands/compress.js';
 import { registerConfigCommand } from './commands/config.js';
+import { registerDebriefCommand } from './commands/debrief.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerExportCommand } from './commands/export.js';
 import { registerHookCommand } from './commands/hook.js';
 import { registerInstallCommand } from './commands/install.js';
 import { registerLifecycleCommands } from './commands/lifecycle.js';
 import { registerMcpCommand } from './commands/mcp.js';
+import { registerNoteCommand } from './commands/note.js';
+import { registerObserveCommand } from './commands/observe.js';
 import { registerReindexCommand } from './commands/reindex.js';
 import { registerSearchCommand } from './commands/search.js';
 import { registerStatusCommand } from './commands/status.js';
@@ -37,6 +40,9 @@ export function createProgram(): Command {
   registerExportCommand(program);
   registerHookCommand(program);
   registerReindexCommand(program);
+  registerNoteCommand(program);
+  registerObserveCommand(program);
+  registerDebriefCommand(program);
 
   return program;
 }

@@ -472,6 +472,170 @@ export class Storage {
   transaction<T>(fn: () => T): T {
     return this.db.transaction(fn)();
   }
+
+  // --- observe / debrief analytics ---
+  //
+  // These are read-heavy queries serving the CLI dashboards. They stay on
+  // the Storage class (not a separate analytics module) because they work
+  // on the same prepared-statement cache and benefit from colocation with
+  // the tables they query.
+
+  /** Pending, non-expired handoffs on a task. */
+  pendingHandoffs(task_id: number): ObservationRow[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM observations
+         WHERE task_id = ? AND kind = 'handoff'
+           AND json_extract(metadata, '$.status') = 'pending'
+         ORDER BY ts DESC LIMIT 50`,
+      )
+      .all(task_id) as ObservationRow[];
+  }
+
+  /**
+   * Recent write-tool observations whose file wasn't explicitly claimed by
+   * the agent that edited it. "Claimed" here means an explicit `claim`-kind
+   * observation — not the auto-claim side effect — so the query measures
+   * proactive behavior, not the automatic safety net.
+   */
+  recentEditsWithoutClaims(
+    since_ts: number,
+    limit = 20,
+  ): Array<{ session_id: string; file_path: string; ts: number; task_id: number | null }> {
+    return this.db
+      .prepare(
+        `SELECT o.session_id,
+                json_extract(o.metadata, '$.file_path') AS file_path,
+                o.ts,
+                o.task_id
+         FROM observations o
+         WHERE o.kind = 'tool_use'
+           AND o.ts > ?
+           AND json_extract(o.metadata, '$.file_path') IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM observations c
+             WHERE c.kind = 'claim'
+               AND c.session_id = o.session_id
+               AND json_extract(c.metadata, '$.file_path') = json_extract(o.metadata, '$.file_path')
+               AND c.ts <= o.ts
+           )
+         ORDER BY o.ts DESC
+         LIMIT ?`,
+      )
+      .all(since_ts, limit) as Array<{
+      session_id: string;
+      file_path: string;
+      ts: number;
+      task_id: number | null;
+    }>;
+  }
+
+  /** Per-session activity since `since_ts`, split into total observations
+   *  and task-thread-tagged observations. Ratio is the debrief's first
+   *  signal of whether an agent found the tools at all. */
+  toolUsageBySession(
+    since_ts: number,
+  ): Array<{ session_id: string; total_obs: number; task_tool_obs: number }> {
+    return this.db
+      .prepare(
+        `SELECT
+           session_id,
+           COUNT(*) AS total_obs,
+           SUM(CASE WHEN task_id IS NOT NULL THEN 1 ELSE 0 END) AS task_tool_obs
+         FROM observations
+         WHERE ts > ? AND session_id != 'observer'
+         GROUP BY session_id
+         ORDER BY total_obs DESC`,
+      )
+      .all(since_ts) as Array<{
+      session_id: string;
+      total_obs: number;
+      task_tool_obs: number;
+    }>;
+  }
+
+  /** First task-participant row for a session, used to verify auto-join
+   *  fired within ~2s of SessionStart. */
+  participantJoinFor(session_id: string): TaskParticipantRow | undefined {
+    return this.db
+      .prepare(
+        'SELECT * FROM task_participants WHERE session_id = ? ORDER BY joined_at ASC LIMIT 1',
+      )
+      .get(session_id) as TaskParticipantRow | undefined;
+  }
+
+  /** Edit count vs explicit-claim count — the critical diagnostic for
+   *  whether proactive claiming is working in the wild. */
+  editVsClaimStats(since_ts: number): { edit_count: number; claim_count: number } {
+    const edit = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM observations
+         WHERE ts > ? AND kind = 'tool_use'
+           AND json_extract(metadata, '$.file_path') IS NOT NULL`,
+      )
+      .get(since_ts) as { n: number };
+    const claim = this.db
+      .prepare("SELECT COUNT(*) AS n FROM observations WHERE ts > ? AND kind = 'claim'")
+      .get(since_ts) as { n: number };
+    return { edit_count: edit.n, claim_count: claim.n };
+  }
+
+  /** Count of handoffs by final status in the window. */
+  handoffStatusDistribution(since_ts: number): {
+    accepted: number;
+    cancelled: number;
+    expired: number;
+    pending: number;
+  } {
+    const row = this.db
+      .prepare(
+        `SELECT
+           SUM(CASE WHEN json_extract(metadata, '$.status') = 'accepted'  THEN 1 ELSE 0 END) AS accepted,
+           SUM(CASE WHEN json_extract(metadata, '$.status') = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+           SUM(CASE WHEN json_extract(metadata, '$.status') = 'expired'   THEN 1 ELSE 0 END) AS expired,
+           SUM(CASE WHEN json_extract(metadata, '$.status') = 'pending'   THEN 1 ELSE 0 END) AS pending
+         FROM observations WHERE ts > ? AND kind = 'handoff'`,
+      )
+      .get(since_ts) as {
+      accepted: number | null;
+      cancelled: number | null;
+      expired: number | null;
+      pending: number | null;
+    };
+    return {
+      accepted: row.accepted ?? 0,
+      cancelled: row.cancelled ?? 0,
+      expired: row.expired ?? 0,
+      pending: row.pending ?? 0,
+    };
+  }
+
+  /** Milliseconds between handoff post and accept, for accepted handoffs. */
+  handoffAcceptLatencies(since_ts: number): number[] {
+    const rows = this.db
+      .prepare(
+        `SELECT (json_extract(metadata, '$.accepted_at') - ts) AS latency_ms
+         FROM observations
+         WHERE ts > ? AND kind = 'handoff'
+           AND json_extract(metadata, '$.status') = 'accepted'
+           AND json_extract(metadata, '$.accepted_at') IS NOT NULL`,
+      )
+      .all(since_ts) as Array<{ latency_ms: number }>;
+    return rows.map((r) => r.latency_ms).filter((n) => Number.isFinite(n) && n >= 0);
+  }
+
+  /** Mixed-source timeline (agent activity + observer notes) ordered
+   *  oldest → newest so the debrief reads as a chronological story. */
+  mixedTimeline(since_ts: number, task_id?: number, limit = 200): ObservationRow[] {
+    if (task_id !== undefined) {
+      return this.db
+        .prepare('SELECT * FROM observations WHERE ts > ? AND task_id = ? ORDER BY ts ASC LIMIT ?')
+        .all(since_ts, task_id, limit) as ObservationRow[];
+    }
+    return this.db
+      .prepare('SELECT * FROM observations WHERE ts > ? ORDER BY ts ASC LIMIT ?')
+      .all(since_ts, limit) as ObservationRow[];
+  }
 }
 
 function sanitizeMatch(q: string): string {
