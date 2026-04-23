@@ -27,11 +27,21 @@ export async function postToolUse(store: MemoryStore, input: HookInput): Promise
       4000,
     );
   if (!body.trim()) return;
+
+  // Capture touched files in the observation metadata. Parsing content for
+  // file_path later would require reversing compression — cheap to record
+  // at write time, expensive to recover at query time. The `observe` and
+  // `debrief` commands both depend on this surface for edit-vs-claim
+  // diagnostics, so we pay the tiny write cost unconditionally.
+  const touchedFiles = extractTouchedFiles(tool, toolInput);
+  const metadata: Record<string, unknown> = { tool };
+  if (touchedFiles.length > 0) metadata.file_path = touchedFiles[0];
+
   store.addObservation({
     session_id: input.session_id,
     kind: 'tool_use',
     content: body,
-    metadata: { tool },
+    metadata,
   });
 
   // Side effect: record a claim for every file this tool edited. Observed

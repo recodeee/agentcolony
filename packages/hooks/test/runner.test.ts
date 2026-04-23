@@ -177,7 +177,10 @@ describe('runHook', () => {
     expect(r.ok).toBe(true);
     const tl = store.timeline('sess-cc');
     expect(tl).toHaveLength(1);
-    expect(tl[0]?.metadata).toEqual({ tool: 'Edit' });
+    // Edit + file_path: the handler now records the touched file path in
+    // metadata so observe/debrief can correlate edits with claims without
+    // re-parsing the content field.
+    expect(tl[0]?.metadata).toEqual({ tool: 'Edit', file_path: '/tmp/x.txt' });
     expect(tl[0]?.content).toContain('Edit');
   });
 

@@ -8,6 +8,7 @@ describe('cavemem CLI program', () => {
     const expected = [
       'compress',
       'config',
+      'debrief',
       'doctor',
       'expand',
       'export',
@@ -15,6 +16,8 @@ describe('cavemem CLI program', () => {
       'import',
       'install',
       'mcp',
+      'note',
+      'observe',
       'reindex',
       'restart',
       'search',
