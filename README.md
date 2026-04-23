@@ -9,7 +9,7 @@ This repo is the `agents-hivemind` monorepo. It combines:
 - a compact `hivemind` runtime snapshot tool for active agent lanes
 - a local viewer and worker for browsing and embedding backfill
 
-Important current-state note: the published CLI and package names are still `cavemem`, so the commands below use `cavemem` even though this repository is branded as `agents-hivemind`.
+Important current-state note: the published CLI and package names are still `cavemem`, so the commands below use `cavemem` even though this repository is branded as `agents-hivemind`. IDE MCP installs register the server as `colony`, so agent tool calls use the `colony` namespace.
 
 ## What It Does
 
