@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings } from '@colony/config';
-import { MemoryStore, TaskThread } from '@colony/core';
+import { MemoryStore, TASK_THREAD_ERROR_CODES, TaskThread } from '@colony/core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -20,6 +20,19 @@ async function call<T>(name: string, args: Record<string, unknown>): Promise<T> 
   const res = await client.callTool({ name, arguments: args });
   const text = (res.content as Array<{ type: string; text: string }>)[0]?.text ?? '{}';
   return JSON.parse(text) as T;
+}
+
+async function callError(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{
+  code: string;
+  error: string;
+}> {
+  const res = await client.callTool({ name, arguments: args });
+  expect(res.isError).toBe(true);
+  const text = (res.content as Array<{ type: string; text: string }>)[0]?.text ?? '{}';
+  return JSON.parse(text) as { code: string; error: string };
 }
 
 /**
@@ -159,11 +172,11 @@ describe('task threads — handoff lifecycle', () => {
     meta.expires_at = Date.now() - 1000;
     store.storage.updateObservationMetadata(handoff_observation_id, JSON.stringify(meta));
 
-    const res = await client.callTool({
-      name: 'task_accept_handoff',
-      arguments: { handoff_observation_id, session_id: sessionB },
+    const error = await callError('task_accept_handoff', {
+      handoff_observation_id,
+      session_id: sessionB,
     });
-    expect(res.isError).toBe(true);
+    expect(error.code).toBe(TASK_THREAD_ERROR_CODES.HANDOFF_EXPIRED);
 
     // Metadata must flip to `expired` so the sender sees the outcome on
     // their next turn — staying `pending` after a failed accept would
@@ -207,11 +220,8 @@ describe('task threads — handoff lifecycle', () => {
     expect(meta.status).toBe('acknowledged');
     expect(meta.acknowledged_by_session_id).toBe(sessionB);
 
-    const retry = await client.callTool({
-      name: 'task_ack_wake',
-      arguments: { wake_observation_id, session_id: sessionB },
-    });
-    expect(retry.isError).toBe(true);
+    const retry = await callError('task_ack_wake', { wake_observation_id, session_id: sessionB });
+    expect(retry.code).toBe(TASK_THREAD_ERROR_CODES.ALREADY_ACKNOWLEDGED);
   });
 
   it('task_cancel_wake cancels a pending wake without side effects on claims', async () => {
@@ -235,11 +245,8 @@ describe('task threads — handoff lifecycle', () => {
     const meta = JSON.parse(row?.metadata ?? '{}');
     expect(meta.status).toBe('cancelled');
 
-    const res = await client.callTool({
-      name: 'task_ack_wake',
-      arguments: { wake_observation_id, session_id: sessionB },
-    });
-    expect(res.isError).toBe(true);
+    const error = await callError('task_ack_wake', { wake_observation_id, session_id: sessionB });
+    expect(error.code).toBe(TASK_THREAD_ERROR_CODES.ALREADY_CANCELLED);
   });
 
   it("task_updates_since filters out the caller's own posts", async () => {

@@ -1,9 +1,8 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { loadSettings, resolveDataDir, settingsPath } from '@colony/config';
-import { Storage } from '@colony/storage';
 import type { Command } from 'commander';
 import kleur from 'kleur';
+import { dataDbPath, withStorage } from '../util/store.js';
 
 export function registerDoctorCommand(program: Command): void {
   program
@@ -17,11 +16,9 @@ export function registerDoctorCommand(program: Command): void {
       const settings = loadSettings();
       const dir = resolveDataDir(settings.dataDir);
       process.stdout.write(`dataDir:  ${dir}\n`);
-      const dbPath = join(dir, 'data.db');
+      const dbPath = dataDbPath(settings);
       try {
-        const s = new Storage(dbPath);
-        const sessions = s.listSessions(1).length;
-        s.close();
+        const sessions = await withStorage(settings, (s) => s.listSessions(1).length);
         process.stdout.write(`db:       ${dbPath} ${kleur.green('ok')} (${sessions} sessions)\n`);
       } catch (err) {
         process.stdout.write(`db:       ${dbPath} ${kleur.red('fail')} ${String(err)}\n`);

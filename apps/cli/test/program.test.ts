@@ -2,35 +2,78 @@ import { describe, expect, it } from 'vitest';
 import { createProgram } from '../src/index.js';
 
 describe('Colony CLI program', () => {
-  it('registers every top-level command', () => {
+  it('registers the stable top-level commands users rely on', () => {
     const program = createProgram();
     const names = program.commands.map((c) => c.name()).sort();
     const expected = [
-      'backfill',
-      'compress',
-      'config',
-      'debrief',
       'doctor',
-      'expand',
-      'export',
       'foraging',
       'hook',
-      'import',
+      'inbox',
       'install',
       'mcp',
       'note',
       'observe',
       'reindex',
-      'restart',
       'search',
       'start',
       'status',
       'stop',
-      'uninstall',
       'viewer',
-      'worker',
     ].sort();
-    expect(names).toEqual(expected);
+    for (const name of expected) {
+      expect(names).toContain(name);
+    }
+  });
+
+  it('keeps help output reviewable without making command registration brittle', () => {
+    const program = createProgram();
+    expect(program.helpInformation()).toMatchInlineSnapshot(`
+      "Usage: colony [options] [command]
+
+      Cross-agent persistent memory with compressed storage.
+
+      Options:
+        -V, --version              output the version number
+        -h, --help                 display help for command
+
+      Commands:
+        install [options]          Register hooks + MCP server for an IDE
+        uninstall [options]        Remove IDE integration
+        status                     Show colony wiring, data, and worker state
+        config                     View or edit colony settings
+        doctor                     Run health checks
+        start                      Start the worker daemon (embeddings + viewer)
+        stop                       Stop the worker daemon
+        restart                    Restart the worker daemon
+        viewer                     Open the memory viewer in your browser
+                                   (auto-starts worker)
+        worker                     Manage local worker daemon
+        mcp                        Run the MCP stdio server (typically invoked by the
+                                   IDE)
+        search [options] <query>   Query memory from the terminal
+        compress [options] <file>  Compress a file in place (.original backup
+                                   created)
+        expand <file>              Expand abbreviations in a file
+        export <out>               Export memory to JSONL
+        import <in>                Import memory from JSONL
+        hook                       Internal: hook handler entrypoints
+        reindex                    Rebuild FTS index
+        backfill                   Heal historical rows that predate newer inference
+                                   logic.
+        note [options] <text...>   Record a timestamped scratch note into the memory
+                                   timeline
+        observe [options]          Live dashboard of collaboration state. Run in a
+                                   spare terminal during a session.
+        debrief [options]          End-of-day collaboration post-mortem: 5 structured
+                                   sections over DB evidence.
+        inbox [options]            Compact list of attention items for a session:
+                                   pending handoffs, wakes, stalled lanes, recent
+                                   claims
+        foraging                   Index and query <repo_root>/examples food sources
+        help [command]             display help for command
+      "
+    `);
   });
 
   it('the install command accepts --ide', () => {

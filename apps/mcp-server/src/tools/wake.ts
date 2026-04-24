@@ -1,12 +1,14 @@
 import {
   type AttentionInboxOptions,
   ProposalSystem,
+  TASK_THREAD_ERROR_CODES,
   TaskThread,
   buildAttentionInbox,
 } from '@colony/core';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { ToolContext } from './context.js';
+import { mcpError, mcpErrorResponse } from './shared.js';
 
 export function register(server: McpServer, ctx: ToolContext): void {
   const { store } = ctx;
@@ -55,27 +57,17 @@ export function register(server: McpServer, ctx: ToolContext): void {
     async ({ wake_observation_id, session_id }) => {
       const obs = store.storage.getObservation(wake_observation_id);
       if (!obs?.task_id) {
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify({ error: 'observation is not on a task' }) },
-          ],
-          isError: true,
-        };
+        return mcpErrorResponse(
+          TASK_THREAD_ERROR_CODES.OBSERVATION_NOT_ON_TASK,
+          'observation is not on a task',
+        );
       }
       const thread = new TaskThread(store, obs.task_id);
       try {
         thread.acknowledgeWake(wake_observation_id, session_id);
         return { content: [{ type: 'text', text: JSON.stringify({ status: 'acknowledged' }) }] };
       } catch (err) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
-            },
-          ],
-          isError: true,
-        };
+        return mcpError(err);
       }
     },
   );
@@ -91,27 +83,17 @@ export function register(server: McpServer, ctx: ToolContext): void {
     async ({ wake_observation_id, session_id, reason }) => {
       const obs = store.storage.getObservation(wake_observation_id);
       if (!obs?.task_id) {
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify({ error: 'observation is not on a task' }) },
-          ],
-          isError: true,
-        };
+        return mcpErrorResponse(
+          TASK_THREAD_ERROR_CODES.OBSERVATION_NOT_ON_TASK,
+          'observation is not on a task',
+        );
       }
       const thread = new TaskThread(store, obs.task_id);
       try {
         thread.cancelWake(wake_observation_id, session_id, reason);
         return { content: [{ type: 'text', text: JSON.stringify({ status: 'cancelled' }) }] };
       } catch (err) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }),
-            },
-          ],
-          isError: true,
-        };
+        return mcpError(err);
       }
     },
   );

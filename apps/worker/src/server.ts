@@ -11,6 +11,8 @@ import { Hono } from 'hono';
 import { type EmbedLoopHandle, startEmbedLoop, stateFilePath } from './embed-loop.js';
 import { renderIndex, renderSession } from './viewer.js';
 
+const HIVEMIND_CACHE_TTL_MS = 500;
+
 export interface WorkerAppOptions {
   hivemindRepoRoots?: string[];
 }
@@ -21,6 +23,7 @@ export function buildApp(
   options: WorkerAppOptions = {},
 ): Hono {
   const app = new Hono();
+  const readCachedHivemind = createHivemindReader(options);
 
   app.use('*', async (_c, next) => {
     loop?.touch();
@@ -39,7 +42,7 @@ export function buildApp(
     return c.json(store.storage.listSessions(limit));
   });
 
-  app.get('/api/hivemind', (c) => c.json(readWorkerHivemind(options)));
+  app.get('/api/hivemind', (c) => c.json(readCachedHivemind()));
 
   app.get('/api/colony/tasks', (c) => {
     const repoRoot = c.req.query('repo_root');
@@ -125,9 +128,7 @@ export function buildApp(
     return c.json(await store.search(q, limit));
   });
 
-  app.get('/', (c) =>
-    c.html(renderIndex(store.storage.listSessions(50), readWorkerHivemind(options))),
-  );
+  app.get('/', (c) => c.html(renderIndex(store.storage.listSessions(50), readCachedHivemind())));
   app.get('/sessions/:id', (c) => {
     const id = c.req.param('id');
     const session = store.storage.getSession(id);
@@ -154,6 +155,18 @@ function safeJsonObject(raw: string | null): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function createHivemindReader(options: WorkerAppOptions): () => ReturnType<typeof readHivemind> {
+  let cached: ReturnType<typeof readHivemind> | null = null;
+  let cachedAt = 0;
+  return () => {
+    const now = Date.now();
+    if (cached && now - cachedAt < HIVEMIND_CACHE_TTL_MS) return cached;
+    cached = readWorkerHivemind(options);
+    cachedAt = now;
+    return cached;
+  };
 }
 
 function readWorkerHivemind(options: WorkerAppOptions): ReturnType<typeof readHivemind> {
@@ -195,14 +208,14 @@ export async function start(): Promise<void> {
   // Build embedder if provider != 'none'. Model load runs in the worker
   // process only — hooks never wait for it.
   let embedder = null;
+  let embedderError: string | null = null;
   try {
     embedder = await createEmbedder(settings, {
       log: (line) => process.stderr.write(`${line}\n`),
     });
   } catch (err) {
-    process.stderr.write(
-      `[colony worker] embedder unavailable: ${err instanceof Error ? err.message : String(err)}\n`,
-    );
+    embedderError = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[colony worker] embedder unavailable: ${embedderError}\n`);
   }
 
   if (embedder) {
@@ -227,7 +240,7 @@ export async function start(): Promise<void> {
           total: store.storage.countObservations(),
           lastBatchAt: null,
           lastBatchMs: null,
-          lastError: null,
+          lastError: embedderError,
           lastHttpAt: Date.now(),
           startedAt: Date.now(),
         },

@@ -309,10 +309,10 @@ Hand off work to another agent on this task. Atomically transfers file claims fr
     "session_id": "sess_abc",
     "agent": "claude",
     "to_agent": "codex",
-    "summary": "Implementation landed. Codex: run the e2e script and check the pack-release path.",
-    "next_steps": ["run scripts/e2e-publish.sh", "verify apps/cli/release/ is populated"],
+    "summary": "Implementation landed. Codex: run the publish e2e script.",
+    "next_steps": ["run scripts/e2e-publish.sh", "verify the packed CLI tarball includes staged assets"],
     "blockers": [],
-    "transferred_files": ["apps/cli/scripts/pack-release.mjs"],
+    "transferred_files": ["apps/cli/scripts/prepack.mjs"],
     "expires_in_minutes": 60
   }
 }
@@ -331,7 +331,7 @@ Accept a pending handoff addressed to you. Installs the transferred file claims 
 }
 ```
 
-Returns `{ status: 'accepted' }` on success, `{ error }` when the observation is not a handoff or is already resolved.
+Returns `{ status: 'accepted' }` on success. Errors include `{ code, error }`, where `code` is stable for branching, for example `HANDOFF_EXPIRED`, `NOT_PARTICIPANT`, `NOT_TARGET_AGENT`, or `ALREADY_ACCEPTED`.
 
 ## `task_decline_handoff`
 
@@ -348,7 +348,7 @@ Decline a pending handoff. Records a reason so the sender can reissue, possibly 
 }
 ```
 
-Returns `{ status: 'cancelled' }` on success.
+Returns `{ status: 'cancelled' }` on success. Errors include `{ code, error }`.
 
 ## `task_wake`
 
@@ -382,7 +382,7 @@ Acknowledge a pending wake request. Records an ack on the task thread so the sen
 }
 ```
 
-Returns `{ status: 'acknowledged' }`.
+Returns `{ status: 'acknowledged' }`. Errors include `{ code, error }`, for example `WAKE_EXPIRED`, `NOT_PARTICIPANT`, `NOT_TARGET_AGENT`, or `ALREADY_ACKNOWLEDGED`.
 
 ## `task_cancel_wake`
 
@@ -395,7 +395,7 @@ Cancel a pending wake. Either the sender (withdrawing) or the target (declining)
 }
 ```
 
-Returns `{ status: 'cancelled' }`.
+Returns `{ status: 'cancelled' }`. Errors include `{ code, error }`.
 
 ## `attention_inbox`
 

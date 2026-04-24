@@ -129,6 +129,10 @@ These mechanisms are intentionally simple. Colony favors observable signals, dec
 - MCP transport is stdio-based, so IDE/runtime restarts can close the server process; the next tool call should reconnect through the installed config.
 - The viewer is useful for inspection, but the primary workflow is still terminal/agent-driven.
 
+## Demo App
+
+`apps/hivemind-demo` is a private pedagogical artifact. It models a deterministic multi-agent loop in-process so coordination ideas can be tested without launching real IDE agents.
+
 ## Roadmap
 
 - Finish release hygiene for the renamed `colony` package.

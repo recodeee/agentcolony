@@ -12,6 +12,8 @@ export { createSessionId } from './ids.js';
 export { inferIdeFromSessionId } from './infer-ide.js';
 export {
   TaskThread,
+  TaskThreadError,
+  TASK_THREAD_ERROR_CODES,
   type CoordinationKind,
   type HandoffMetadata,
   type HandoffObservation,
@@ -19,6 +21,7 @@ export {
   type HandoffTarget,
   type HandOffArgs,
   type RequestWakeArgs,
+  type TaskThreadErrorCode,
   type WakeRequestMetadata,
   type WakeRequestObservation,
   type WakeStatus,

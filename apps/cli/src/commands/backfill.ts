@@ -1,8 +1,7 @@
-import { join } from 'node:path';
-import { loadSettings, resolveDataDir } from '@colony/config';
+import { loadSettings } from '@colony/config';
 import { inferIdeFromSessionId } from '@colony/core';
-import { Storage } from '@colony/storage';
 import type { Command } from 'commander';
+import { withStorage } from '../util/store.js';
 
 /**
  * `colony backfill ide` heals sessions rows whose stored ide is `'unknown'`
@@ -25,16 +24,11 @@ export function registerBackfillCommand(program: Command): void {
     .description('Re-infer the ide column for sessions stored as unknown.')
     .action(async () => {
       const settings = loadSettings();
-      const storage = new Storage(join(resolveDataDir(settings.dataDir), 'data.db'));
-      try {
-        const { scanned, updated } = storage.backfillUnknownIde((id) =>
-          inferIdeFromSessionId(id),
-        );
+      await withStorage(settings, (storage) => {
+        const { scanned, updated } = storage.backfillUnknownIde((id) => inferIdeFromSessionId(id));
         process.stdout.write(
           `backfill ide: scanned=${scanned} updated=${updated} remaining=${scanned - updated}\n`,
         );
-      } finally {
-        storage.close();
-      }
+      });
     });
 }

@@ -1,9 +1,8 @@
-import { join } from 'node:path';
-import { loadSettings, resolveDataDir } from '@colony/config';
-import { MemoryStore } from '@colony/core';
+import { loadSettings } from '@colony/config';
 import { createEmbedder } from '@colony/embedding';
 import type { Command } from 'commander';
 import kleur from 'kleur';
+import { withStore } from '../util/store.js';
 
 export function registerSearchCommand(program: Command): void {
   program
@@ -13,9 +12,7 @@ export function registerSearchCommand(program: Command): void {
     .option('--no-semantic', 'disable semantic re-rank, use BM25 only')
     .action(async (query: string, opts: { limit: string; semantic: boolean }) => {
       const settings = loadSettings();
-      const dbPath = join(resolveDataDir(settings.dataDir), 'data.db');
-      const store = new MemoryStore({ dbPath, settings });
-      try {
+      await withStore(settings, async (store) => {
         let embedder = undefined;
         if (opts.semantic && settings.embedding.provider !== 'none') {
           const t0 = Date.now();
@@ -38,8 +35,6 @@ export function registerSearchCommand(program: Command): void {
             `${h.id}\t${h.score.toFixed(3)}\t${h.session_id}\t${h.snippet.replace(/\s+/g, ' ')}\n`,
           );
         }
-      } finally {
-        store.close();
-      }
+      });
     });
 }

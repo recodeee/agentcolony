@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadSettings, resolveDataDir, settingsPath } from '@colony/config';
-import { Storage } from '@colony/storage';
 import type { Command } from 'commander';
 import kleur from 'kleur';
+import { dataDbPath, withStorage } from '../util/store.js';
 
 interface WorkerState {
   provider?: string;
@@ -56,11 +56,11 @@ export function registerStatusCommand(program: Command): void {
   program
     .command('status')
     .description('Show colony wiring, data, and worker state')
-    .action(() => {
+    .action(async () => {
       const sp = settingsPath();
       const settings = loadSettings();
       const dir = resolveDataDir(settings.dataDir);
-      const dbPath = join(dir, 'data.db');
+      const dbPath = dataDbPath(settings);
 
       process.stdout.write(`${kleur.bold('colony status')}\n\n`);
       process.stdout.write(
@@ -72,10 +72,10 @@ export function registerStatusCommand(program: Command): void {
       let obsCount = 0;
       let sessCount = 0;
       try {
-        const s = new Storage(dbPath);
-        obsCount = s.countObservations();
-        sessCount = s.listSessions(10_000).length;
-        s.close();
+        await withStorage(settings, (s) => {
+          obsCount = s.countObservations();
+          sessCount = s.listSessions(10_000).length;
+        });
         process.stdout.write(
           `db:         ${dbPath} ${kleur.green('✓')} (${obsCount} observations, ${sessCount} sessions)\n`,
         );
@@ -109,6 +109,8 @@ export function registerStatusCommand(program: Command): void {
         );
         if (state.lastError) {
           process.stdout.write(`  ${kleur.red('error:')} ${state.lastError}\n`);
+          const remediation = embeddingRemediation(provider, state.lastError);
+          if (remediation) process.stdout.write(`  ${kleur.yellow('fix:')} ${remediation}\n`);
         }
       } else {
         process.stdout.write(
@@ -131,4 +133,11 @@ export function registerStatusCommand(program: Command): void {
         );
       }
     });
+}
+
+function embeddingRemediation(provider: string, error: string): string | null {
+  if (provider === 'local' && /@xenova\/transformers|transformers/i.test(error)) {
+    return 'local provider requires @xenova/transformers — install it or switch embedding.provider to none, ollama, or openai.';
+  }
+  return null;
 }

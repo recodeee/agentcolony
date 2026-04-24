@@ -4,6 +4,8 @@ import type {
   HivemindSnapshot,
   SearchResult,
 } from '@colony/core';
+import { TASK_THREAD_ERROR_CODES, TaskThreadError } from '@colony/core';
+import type { TaskThreadErrorCode } from '@colony/core';
 
 export interface HivemindToolOptions {
   repo_root: string | undefined;
@@ -53,10 +55,33 @@ export function toHivemindOptions(input: HivemindToolOptions): HivemindOptions {
   return options;
 }
 
-export function buildContextQuery(
-  query: string | undefined,
-  sessions: HivemindSession[],
-): string {
+export function mcpError(err: unknown): {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+} {
+  const error = err instanceof Error ? err.message : String(err);
+  const code =
+    err instanceof TaskThreadError ? err.code : TASK_THREAD_ERROR_CODES.OBSERVATION_NOT_ON_TASK;
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ code, error }) }],
+    isError: true,
+  };
+}
+
+export function mcpErrorResponse(
+  code: TaskThreadErrorCode | 'SPEC_TASK_NOT_FOUND' | 'SPEC_CHANGE_NOT_FOUND',
+  error: string,
+): {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+} {
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ code, error }) }],
+    isError: true,
+  };
+}
+
+export function buildContextQuery(query: string | undefined, sessions: HivemindSession[]): string {
   if (query?.trim()) return query.trim();
   const taskText = sessions
     .flatMap((session) => [
