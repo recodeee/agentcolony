@@ -11,6 +11,7 @@ import {
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { ToolContext } from './context.js';
+import { mcpErrorResponse } from './shared.js';
 
 export function register(server: McpServer, ctx: ToolContext): void {
   const { store } = ctx;
@@ -106,9 +107,7 @@ export function register(server: McpServer, ctx: ToolContext): void {
         ...(task ? { task_id: task.task_id } : {}),
       });
       return {
-        content: [
-          { type: 'text', text: JSON.stringify({ delta_count: change.deltaRows.length }) },
-        ],
+        content: [{ type: 'text', text: JSON.stringify({ delta_count: change.deltaRows.length }) }],
       };
     },
   );
@@ -125,10 +124,7 @@ export function register(server: McpServer, ctx: ToolContext): void {
       const spec = repo.readRoot();
       const resolved = resolveTaskContext(spec, task_id);
       if (!resolved) {
-        return {
-          content: [{ type: 'text', text: JSON.stringify({ error: `no task ${task_id}` }) }],
-          isError: true,
-        };
+        return mcpErrorResponse('SPEC_TASK_NOT_FOUND', `no task ${task_id}`);
       }
       return {
         content: [
@@ -163,12 +159,7 @@ export function register(server: McpServer, ctx: ToolContext): void {
       const repo = new SpecRepository({ repoRoot: args.repo_root, store });
       const specTask = repo.listSpecTasks().find((t) => t.slug === args.slug);
       if (!specTask) {
-        return {
-          content: [
-            { type: 'text', text: JSON.stringify({ error: `no open change ${args.slug}` }) },
-          ],
-          isError: true,
-        };
+        return mcpErrorResponse('SPEC_CHANGE_NOT_FOUND', `no open change ${args.slug}`);
       }
       const signature = computeFailureSignature({
         test_id: args.test_id,

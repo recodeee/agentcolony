@@ -32,21 +32,14 @@
     "colony": "./dist/index.js"
   },
   "main": "./dist/index.js",
-  "files": [
-    "dist",
-    "hooks-scripts",
-    "README.md",
-    "LICENSE"
-  ],
+  "files": ["dist", "hooks-scripts", "README.md", "LICENSE"],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch --onSuccess \"node dist/index.js\"",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "stage-publish": "node scripts/prepack.mjs",
-    "prepublishOnly": "node scripts/prepack.mjs",
-    "pack:release": "pnpm build && node scripts/pack-release.mjs",
-    "publish:release": "pnpm pack:release && npm publish ./release --access public"
+    "prepublishOnly": "node scripts/prepack.mjs"
   },
   "dependencies": {
     "commander": "^12.1.0",

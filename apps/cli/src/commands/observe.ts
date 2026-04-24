@@ -132,11 +132,12 @@ export function registerObserveCommand(program: Command): void {
       const storage = new Storage(dbPath);
       const intervalMs = Math.max(500, Number(opts.interval));
 
-      // \x1b[2J clears the screen; \x1b[H sends the cursor home. Minimal
+      // \x1b[3J clears scrollback where supported, \x1b[2J clears the
+      // visible screen, and \x1b[H sends the cursor home. Minimal
       // cross-platform approach — avoids heavyweight `blessed`/`ink` deps
       // for what is ultimately a glorified printf loop.
       const paint = () => {
-        process.stdout.write('\x1b[2J\x1b[H');
+        process.stdout.write('\x1b[3J\x1b[H\x1b[2J');
         process.stdout.write(renderFrame(storage));
         process.stdout.write(`\n\n${kleur.dim(`refresh ${intervalMs}ms · ctrl-c to exit`)}\n`);
       };

@@ -1,4 +1,4 @@
-import { inferIdeFromSessionId, type HivemindSession, type HivemindSnapshot } from '@colony/core';
+import { type HivemindSession, type HivemindSnapshot, inferIdeFromSessionId } from '@colony/core';
 import type { SessionRow } from '@colony/storage';
 
 const style = `
@@ -27,8 +27,33 @@ const style = `
   .owner[data-derived="true"] { font-style: italic; opacity: 0.85; }
 `;
 
+interface SafeHtml {
+  readonly __html: string;
+}
+
+function raw(value: string): SafeHtml {
+  return { __html: value };
+}
+
+function html(strings: TemplateStringsArray, ...values: unknown[]): string {
+  let out = strings[0] ?? '';
+  for (let i = 0; i < values.length; i++) {
+    out += renderHtmlValue(values[i]);
+    out += strings[i + 1] ?? '';
+  }
+  return out;
+}
+
+function renderHtmlValue(value: unknown): string {
+  if (Array.isArray(value)) return value.map(renderHtmlValue).join('');
+  if (value && typeof value === 'object' && '__html' in value) {
+    return String((value as SafeHtml).__html);
+  }
+  return esc(String(value ?? ''));
+}
+
 function layout(title: string, body: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${style}</style></head><body><header><h1>agents-hivemind</h1><div class="meta">local memory + runtime viewer</div></header><main>${body}</main></body></html>`;
+  return html`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>${raw(style)}</style></head><body><header><h1>agents-hivemind</h1><div class="meta">local memory + runtime viewer</div></header><main>${raw(body)}</main></body></html>`;
 }
 
 function esc(s: string): string {
@@ -53,34 +78,34 @@ function resolveOwner(storedIde: string, sessionId: string): { ide: string; deri
 
 function ownerChip(ide: string, derived: boolean): string {
   const label = derived ? `${ide}?` : ide;
-  return `<span class="owner" data-owner="${esc(ide)}" data-derived="${String(derived)}">${esc(label)}</span>`;
+  return html`<span class="owner" data-owner="${ide}" data-derived="${String(derived)}">${label}</span>`;
 }
 
 export function renderIndex(sessions: SessionRow[], snapshot?: HivemindSnapshot): string {
   const dashboard = snapshot ? renderHivemindDashboard(snapshot) : '';
   if (sessions.length === 0) {
-    return layout('agents-hivemind', `${dashboard}<p>No memory sessions yet.</p>`);
+    return layout('agents-hivemind', html`${raw(dashboard)}<p>No memory sessions yet.</p>`);
   }
   const ownerCounts = new Map<string, number>();
   const items = sessions
     .map((s) => {
       const owner = resolveOwner(s.ide, s.id);
       ownerCounts.set(owner.ide, (ownerCounts.get(owner.ide) ?? 0) + 1);
-      const cwdHtml = s.cwd ? ` · ${esc(s.cwd)}` : '';
-      return `
+      const cwdHtml = s.cwd ? html` · ${s.cwd}` : '';
+      return html`
       <div class="card">
-        <div>${ownerChip(owner.ide, owner.derived)}<a href="/sessions/${esc(s.id)}"><strong>${esc(s.id)}</strong></a></div>
-        <div class="meta">${new Date(s.started_at).toISOString()}${cwdHtml}</div>
+        <div>${raw(ownerChip(owner.ide, owner.derived))}<a href="/sessions/${s.id}"><strong>${s.id}</strong></a></div>
+        <div class="meta">${new Date(s.started_at).toISOString()}${raw(cwdHtml)}</div>
       </div>`;
     })
     .join('');
   const summary = [...ownerCounts.entries()]
     .sort(([, a], [, b]) => b - a)
-    .map(([ide, n]) => `<span class="owner" data-owner="${esc(ide)}">${esc(ide)} · ${n}</span>`)
+    .map(([ide, n]) => html`<span class="owner" data-owner="${ide}">${ide} · ${n}</span>`)
     .join(' ');
   return layout(
     'agents-hivemind · sessions',
-    `${dashboard}<h2>Recent memory sessions</h2><p class="meta">${summary}</p>${items}`,
+    html`${raw(dashboard)}<h2>Recent memory sessions</h2><p class="meta">${raw(summary)}</p>${raw(items)}`,
   );
 }
 
@@ -90,17 +115,17 @@ export function renderSession(
 ): string {
   const rows = observations
     .map(
-      (o) => `
+      (o) => html`
       <div class="card">
-        <div class="meta">#${o.id} · ${esc(o.kind)} · ${new Date(o.ts).toISOString()}</div>
-        <pre>${esc(o.content)}</pre>
+        <div class="meta">#${o.id} · ${o.kind} · ${new Date(o.ts).toISOString()}</div>
+        <pre>${o.content}</pre>
       </div>`,
     )
     .join('');
   const owner = resolveOwner(session.ide, session.id);
   return layout(
     `agents-hivemind · ${session.id}`,
-    `<h2>${ownerChip(owner.ide, owner.derived)}${esc(session.id)}</h2><p><a href="/">&larr; all sessions</a></p>${rows}`,
+    html`<h2>${raw(ownerChip(owner.ide, owner.derived))}${session.id}</h2><p><a href="/">&larr; all sessions</a></p>${raw(rows)}`,
   );
 }
 
@@ -110,7 +135,7 @@ function renderHivemindDashboard(snapshot: HivemindSnapshot): string {
     ? snapshot.sessions.map(renderLane).join('')
     : '<p class="meta">No active Hivemind lanes found for configured repo roots.</p>';
 
-  return `
+  return html`
     <section>
       <h2>Hivemind runtime</h2>
       <div class="grid">
@@ -121,10 +146,12 @@ function renderHivemindDashboard(snapshot: HivemindSnapshot): string {
       </div>
       ${
         needsAttention.length > 0
-          ? `<p><span class="badge" data-attention="true">${needsAttention.length} lane needs attention</span></p>`
-          : '<p><span class="badge">runtime clean</span></p>'
+          ? raw(
+              html`<p><span class="badge" data-attention="true">${needsAttention.length} lane needs attention</span></p>`,
+            )
+          : raw('<p><span class="badge">runtime clean</span></p>')
       }
-      ${lanes}
+      ${raw(lanes)}
     </section>`;
 }
 
@@ -132,18 +159,18 @@ function renderLane(session: HivemindSession): string {
   const attention = laneNeedsAttention(session);
   const lockSummary =
     session.locked_file_count > 0
-      ? `<div class="meta">GX locks ${session.locked_file_count}: ${esc(session.locked_file_preview.join(', '))}</div>`
+      ? html`<div class="meta">GX locks ${session.locked_file_count}: ${session.locked_file_preview.join(', ')}</div>`
       : '';
   const ownerIde = laneOwnerIde(session);
   const ownerDerived = ownerIde !== session.agent && ownerIde !== session.cli;
-  return `
+  return html`
     <div class="card lane" data-attention="${String(attention)}">
-      <div>${ownerChip(ownerIde, ownerDerived)}<strong>${esc(session.task || session.task_name || session.branch)}</strong>
-        <span class="badge" data-attention="${String(attention)}">${esc(session.activity)}</span></div>
-      <div class="meta">${esc(session.agent)}/${esc(session.cli)} · ${esc(session.branch)} · ${esc(session.source)}</div>
-      <div class="meta">${esc(session.activity_summary)} Updated ${esc(session.updated_at || 'unknown')}.</div>
-      ${lockSummary}
-      <div class="meta">${esc(session.worktree_path)}</div>
+      <div>${raw(ownerChip(ownerIde, ownerDerived))}<strong>${session.task || session.task_name || session.branch}</strong>
+        <span class="badge" data-attention="${String(attention)}">${session.activity}</span></div>
+      <div class="meta">${session.agent}/${session.cli} · ${session.branch} · ${session.source}</div>
+      <div class="meta">${session.activity_summary} Updated ${session.updated_at || 'unknown'}.</div>
+      ${raw(lockSummary)}
+      <div class="meta">${session.worktree_path}</div>
     </div>`;
 }
 

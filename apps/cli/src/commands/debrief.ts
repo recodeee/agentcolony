@@ -1,8 +1,8 @@
-import { join } from 'node:path';
-import { loadSettings, resolveDataDir } from '@colony/config';
-import { Storage } from '@colony/storage';
+import { loadSettings } from '@colony/config';
+import type { Storage } from '@colony/storage';
 import type { Command } from 'commander';
 import kleur from 'kleur';
+import { withStorage } from '../util/store.js';
 
 /**
  * Default window: last 24h. The "ran it today" common case. Overridable
@@ -179,11 +179,9 @@ export function registerDebriefCommand(program: Command): void {
     .description('End-of-day collaboration post-mortem: 5 structured sections over DB evidence.')
     .option('--hours <n>', 'Window size in hours', String(DEFAULT_HOURS))
     .option('--task <id>', 'Narrow the timeline section to a specific task thread')
-    .action((opts: { hours: string; task?: string }) => {
+    .action(async (opts: { hours: string; task?: string }) => {
       const settings = loadSettings();
-      const dbPath = join(resolveDataDir(settings.dataDir), 'data.db');
-      const storage = new Storage(dbPath);
-      try {
+      await withStorage(settings, (storage) => {
         const ctx: DebriefContext = {
           storage,
           since: Date.now() - Number(opts.hours) * 3_600_000,
@@ -206,8 +204,6 @@ export function registerDebriefCommand(program: Command): void {
           '  • Which failures were missing-tool vs. tool-not-called vs. structural?\n',
         );
         process.stdout.write('  • What was the most valuable moment the system created?\n');
-      } finally {
-        storage.close();
-      }
+      });
     });
 }

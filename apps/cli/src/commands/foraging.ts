@@ -1,9 +1,9 @@
-import { join } from 'node:path';
-import { loadSettings, resolveDataDir } from '@colony/config';
-import { MemoryStore } from '@colony/core';
+import { loadSettings } from '@colony/config';
+import type { MemoryStore } from '@colony/core';
 import { scanExamples } from '@colony/foraging';
 import type { Command } from 'commander';
 import kleur from 'kleur';
+import { withStore } from '../util/store.js';
 
 const FORAGING_SESSION_ID = 'foraging';
 
@@ -37,9 +37,7 @@ export function registerForagingCommand(program: Command): void {
         return;
       }
       const repo_root = opts.cwd ?? process.cwd();
-      const dbPath = join(resolveDataDir(settings.dataDir), 'data.db');
-      const store = new MemoryStore({ dbPath, settings });
-      try {
+      await withStore(settings, (store) => {
         ensureForagingSession(store);
         const result = scanExamples({
           repo_root,
@@ -56,9 +54,7 @@ export function registerForagingCommand(program: Command): void {
         process.stdout.write(
           `${kleur.green('✓')} foraging: ${result.scanned.length} source(s), ${changed} re-indexed, ${result.skipped_unchanged} skipped (unchanged), ${result.indexed_observations} observation(s)\n`,
         );
-      } finally {
-        store.close();
-      }
+      });
     });
 
   group
@@ -68,9 +64,7 @@ export function registerForagingCommand(program: Command): void {
     .action(async (opts: { cwd?: string }) => {
       const settings = loadSettings();
       const repo_root = opts.cwd ?? process.cwd();
-      const dbPath = join(resolveDataDir(settings.dataDir), 'data.db');
-      const store = new MemoryStore({ dbPath, settings });
-      try {
+      await withStore(settings, (store) => {
         const rows = store.storage.listExamples(repo_root);
         if (rows.length === 0) {
           process.stdout.write(
@@ -84,9 +78,7 @@ export function registerForagingCommand(program: Command): void {
             `  ${kleur.cyan(r.example_name.padEnd(28))} ${kleur.dim((r.manifest_kind ?? 'unknown').padEnd(8))} ${r.observation_count} obs  ${kleur.dim(when)}\n`,
           );
         }
-      } finally {
-        store.close();
-      }
+      });
     });
 
   group
@@ -97,9 +89,7 @@ export function registerForagingCommand(program: Command): void {
     .action(async (opts: { cwd?: string; example?: string }) => {
       const settings = loadSettings();
       const repo_root = opts.cwd ?? process.cwd();
-      const dbPath = join(resolveDataDir(settings.dataDir), 'data.db');
-      const store = new MemoryStore({ dbPath, settings });
-      try {
+      await withStore(settings, (store) => {
         const targets = opts.example
           ? store.storage.listExamples(repo_root).filter((r) => r.example_name === opts.example)
           : store.storage.listExamples(repo_root);
@@ -115,8 +105,6 @@ export function registerForagingCommand(program: Command): void {
         process.stdout.write(
           `${kleur.green('✓')} cleared ${targets.length} example(s), dropped ${dropped} observation(s)\n`,
         );
-      } finally {
-        store.close();
-      }
+      });
     });
 }

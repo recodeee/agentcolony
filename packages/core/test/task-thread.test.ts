@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { defaultSettings } from '@colony/config';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { MemoryStore } from '../src/memory-store.js';
-import { TaskThread } from '../src/task-thread.js';
+import { TASK_THREAD_ERROR_CODES, TaskThread, TaskThreadError } from '../src/task-thread.js';
 
 let dir: string;
 let store: MemoryStore;
@@ -104,9 +104,13 @@ describe('TaskThread', () => {
     expect(store.storage.getClaim(thread.task_id, 'src/viewer.tsx')).toBeUndefined();
 
     // Second accept must fail — status is no longer pending.
-    expect(() => thread.acceptHandoff(handoffId, 'codex')).toThrow(
-      /not a handoff|accepted|pending/,
-    );
+    try {
+      thread.acceptHandoff(handoffId, 'codex');
+      throw new Error('expected second accept to fail');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TaskThreadError);
+      expect((err as TaskThreadError).code).toBe(TASK_THREAD_ERROR_CODES.ALREADY_ACCEPTED);
+    }
   });
 
   it('handoff addressed to a specific agent refuses a mismatched agent', () => {
@@ -129,6 +133,30 @@ describe('TaskThread', () => {
     expect(() => thread.acceptHandoff(handoffId, 'intruder')).toThrow(/codex/);
     thread.acceptHandoff(handoffId, 'codex');
     expect(store.storage.getClaim(thread.task_id, 'x.ts')?.session_id).toBe('codex');
+  });
+
+  it('handoff acceptance reports non-participants with a stable code', () => {
+    seed('claude', 'outsider');
+    const thread = TaskThread.open(store, {
+      repo_root: '/r',
+      branch: 'x',
+      session_id: 'claude',
+    });
+    thread.join('claude', 'claude');
+    const handoffId = thread.handOff({
+      from_session_id: 'claude',
+      from_agent: 'claude',
+      to_agent: 'any',
+      summary: 'please take over',
+    });
+
+    try {
+      thread.acceptHandoff(handoffId, 'outsider');
+      throw new Error('expected outsider accept to fail');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TaskThreadError);
+      expect((err as TaskThreadError).code).toBe(TASK_THREAD_ERROR_CODES.NOT_PARTICIPANT);
+    }
   });
 
   it("pendingHandoffsFor hides the sender's own handoff and expired ones", () => {
@@ -185,6 +213,12 @@ describe('TaskThread', () => {
     const meta = JSON.parse(row?.metadata ?? '{}') as { status: string };
     expect(meta.status).toBe('cancelled');
     // Accept after decline must fail.
-    expect(() => thread.acceptHandoff(handoffId, 'codex')).toThrow(/cancelled|pending/);
+    try {
+      thread.acceptHandoff(handoffId, 'codex');
+      throw new Error('expected accept after decline to fail');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TaskThreadError);
+      expect((err as TaskThreadError).code).toBe(TASK_THREAD_ERROR_CODES.ALREADY_CANCELLED);
+    }
   });
 });

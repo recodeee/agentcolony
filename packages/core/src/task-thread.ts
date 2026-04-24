@@ -26,6 +26,54 @@ export type HandoffTarget = 'claude' | 'codex' | 'any';
 export type WakeStatus = 'pending' | 'acknowledged' | 'expired' | 'cancelled';
 export type WakeTarget = 'claude' | 'codex' | 'any';
 
+export const TASK_THREAD_ERROR_CODES = {
+  OBSERVATION_NOT_ON_TASK: 'OBSERVATION_NOT_ON_TASK',
+  NOT_HANDOFF: 'NOT_HANDOFF',
+  NOT_WAKE_REQUEST: 'NOT_WAKE_REQUEST',
+  TASK_MISMATCH: 'TASK_MISMATCH',
+  METADATA_MISSING: 'METADATA_MISSING',
+  ALREADY_ACCEPTED: 'ALREADY_ACCEPTED',
+  ALREADY_ACKNOWLEDGED: 'ALREADY_ACKNOWLEDGED',
+  ALREADY_CANCELLED: 'ALREADY_CANCELLED',
+  HANDOFF_EXPIRED: 'HANDOFF_EXPIRED',
+  WAKE_EXPIRED: 'WAKE_EXPIRED',
+  NOT_TARGET_SESSION: 'NOT_TARGET_SESSION',
+  NOT_PARTICIPANT: 'NOT_PARTICIPANT',
+  NOT_TARGET_AGENT: 'NOT_TARGET_AGENT',
+} as const;
+
+export type TaskThreadErrorCode =
+  (typeof TASK_THREAD_ERROR_CODES)[keyof typeof TASK_THREAD_ERROR_CODES];
+
+export class TaskThreadError extends Error {
+  readonly code: TaskThreadErrorCode;
+
+  constructor(code: TaskThreadErrorCode, message: string) {
+    super(message);
+    this.name = 'TaskThreadError';
+    this.code = code;
+  }
+}
+
+function taskError(code: TaskThreadErrorCode, message: string): TaskThreadError {
+  return new TaskThreadError(code, message);
+}
+
+function statusErrorCode(
+  status: HandoffStatus | WakeStatus,
+  kind: 'handoff' | 'wake',
+): TaskThreadErrorCode {
+  if (status === 'accepted') return TASK_THREAD_ERROR_CODES.ALREADY_ACCEPTED;
+  if (status === 'acknowledged') return TASK_THREAD_ERROR_CODES.ALREADY_ACKNOWLEDGED;
+  if (status === 'cancelled') return TASK_THREAD_ERROR_CODES.ALREADY_CANCELLED;
+  if (status === 'expired') {
+    return kind === 'handoff'
+      ? TASK_THREAD_ERROR_CODES.HANDOFF_EXPIRED
+      : TASK_THREAD_ERROR_CODES.WAKE_EXPIRED;
+  }
+  return TASK_THREAD_ERROR_CODES.METADATA_MISSING;
+}
+
 /**
  * Structured payload for a wake_request observation. Kept in metadata so the
  * hook preface can render it without decompressing content. Mirrors the
@@ -301,25 +349,50 @@ export class TaskThread {
   acceptHandoff(handoff_observation_id: number, session_id: string): void {
     const obs = this.store.storage.getObservation(handoff_observation_id);
     if (!obs || obs.kind !== 'handoff') {
-      throw new Error(`observation ${handoff_observation_id} is not a handoff`);
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.NOT_HANDOFF,
+        `observation ${handoff_observation_id} is not a handoff`,
+      );
     }
     if (obs.task_id !== this.task_id) {
-      throw new Error(`handoff belongs to task ${obs.task_id}, not ${this.task_id}`);
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.TASK_MISMATCH,
+        `handoff belongs to task ${obs.task_id}, not ${this.task_id}`,
+      );
     }
     const meta = parseHandoff(obs.metadata);
-    if (!meta) throw new Error('handoff metadata missing');
-    if (meta.status !== 'pending') throw new Error(`handoff is ${meta.status}, cannot accept`);
+    if (!meta) {
+      throw taskError(TASK_THREAD_ERROR_CODES.METADATA_MISSING, 'handoff metadata missing');
+    }
+    if (meta.status !== 'pending') {
+      throw taskError(
+        statusErrorCode(meta.status, 'handoff'),
+        `handoff is ${meta.status}, cannot accept`,
+      );
+    }
     if (Date.now() > meta.expires_at) {
       meta.status = 'expired';
       this.store.storage.updateObservationMetadata(handoff_observation_id, JSON.stringify(meta));
-      throw new Error('handoff expired');
+      throw taskError(TASK_THREAD_ERROR_CODES.HANDOFF_EXPIRED, 'handoff expired');
     }
     if (meta.to_session_id && meta.to_session_id !== session_id) {
-      throw new Error('handoff is addressed to a different session');
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.NOT_TARGET_SESSION,
+        'handoff is addressed to a different session',
+      );
     }
     const myAgent = this.store.storage.getParticipantAgent(this.task_id, session_id);
+    if (!myAgent) {
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.NOT_PARTICIPANT,
+        'session is not a participant on this task',
+      );
+    }
     if (meta.to_agent !== 'any' && myAgent && meta.to_agent !== myAgent) {
-      throw new Error(`handoff is for ${meta.to_agent}, not ${myAgent}`);
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.NOT_TARGET_AGENT,
+        `handoff is for ${meta.to_agent}, not ${myAgent}`,
+      );
     }
 
     this.store.storage.transaction(() => {
@@ -342,11 +415,19 @@ export class TaskThread {
    *  and flips the handoff status to `cancelled`. No claims are touched. */
   declineHandoff(handoff_observation_id: number, session_id: string, reason?: string): void {
     const obs = this.store.storage.getObservation(handoff_observation_id);
-    if (!obs || obs.kind !== 'handoff') throw new Error('not a handoff');
-    if (obs.task_id !== this.task_id) throw new Error('handoff belongs to a different task');
+    if (!obs || obs.kind !== 'handoff') {
+      throw taskError(TASK_THREAD_ERROR_CODES.NOT_HANDOFF, 'not a handoff');
+    }
+    if (obs.task_id !== this.task_id) {
+      throw taskError(TASK_THREAD_ERROR_CODES.TASK_MISMATCH, 'handoff belongs to a different task');
+    }
     const meta = parseHandoff(obs.metadata);
-    if (!meta) throw new Error('handoff metadata missing');
-    if (meta.status !== 'pending') throw new Error(`handoff is ${meta.status}`);
+    if (!meta) {
+      throw taskError(TASK_THREAD_ERROR_CODES.METADATA_MISSING, 'handoff metadata missing');
+    }
+    if (meta.status !== 'pending') {
+      throw taskError(statusErrorCode(meta.status, 'handoff'), `handoff is ${meta.status}`);
+    }
     this.store.storage.transaction(() => {
       meta.status = 'cancelled';
       this.store.storage.updateObservationMetadata(handoff_observation_id, JSON.stringify(meta));
@@ -425,25 +506,48 @@ export class TaskThread {
   acknowledgeWake(wake_observation_id: number, session_id: string): void {
     const obs = this.store.storage.getObservation(wake_observation_id);
     if (!obs || obs.kind !== 'wake_request') {
-      throw new Error(`observation ${wake_observation_id} is not a wake_request`);
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.NOT_WAKE_REQUEST,
+        `observation ${wake_observation_id} is not a wake_request`,
+      );
     }
     if (obs.task_id !== this.task_id) {
-      throw new Error(`wake belongs to task ${obs.task_id}, not ${this.task_id}`);
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.TASK_MISMATCH,
+        `wake belongs to task ${obs.task_id}, not ${this.task_id}`,
+      );
     }
     const meta = parseWake(obs.metadata);
-    if (!meta) throw new Error('wake metadata missing');
-    if (meta.status !== 'pending') throw new Error(`wake is ${meta.status}, cannot acknowledge`);
+    if (!meta) throw taskError(TASK_THREAD_ERROR_CODES.METADATA_MISSING, 'wake metadata missing');
+    if (meta.status !== 'pending') {
+      throw taskError(
+        statusErrorCode(meta.status, 'wake'),
+        `wake is ${meta.status}, cannot acknowledge`,
+      );
+    }
     if (Date.now() > meta.expires_at) {
       meta.status = 'expired';
       this.store.storage.updateObservationMetadata(wake_observation_id, JSON.stringify(meta));
-      throw new Error('wake expired');
+      throw taskError(TASK_THREAD_ERROR_CODES.WAKE_EXPIRED, 'wake expired');
     }
     if (meta.to_session_id && meta.to_session_id !== session_id) {
-      throw new Error('wake is addressed to a different session');
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.NOT_TARGET_SESSION,
+        'wake is addressed to a different session',
+      );
     }
     const myAgent = this.store.storage.getParticipantAgent(this.task_id, session_id);
+    if (!myAgent) {
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.NOT_PARTICIPANT,
+        'session is not a participant on this task',
+      );
+    }
     if (meta.to_agent !== 'any' && myAgent && meta.to_agent !== myAgent) {
-      throw new Error(`wake is for ${meta.to_agent}, not ${myAgent}`);
+      throw taskError(
+        TASK_THREAD_ERROR_CODES.NOT_TARGET_AGENT,
+        `wake is for ${meta.to_agent}, not ${myAgent}`,
+      );
     }
 
     this.store.storage.transaction(() => {
@@ -470,11 +574,17 @@ export class TaskThread {
    */
   cancelWake(wake_observation_id: number, session_id: string, reason?: string): void {
     const obs = this.store.storage.getObservation(wake_observation_id);
-    if (!obs || obs.kind !== 'wake_request') throw new Error('not a wake_request');
-    if (obs.task_id !== this.task_id) throw new Error('wake belongs to a different task');
+    if (!obs || obs.kind !== 'wake_request') {
+      throw taskError(TASK_THREAD_ERROR_CODES.NOT_WAKE_REQUEST, 'not a wake_request');
+    }
+    if (obs.task_id !== this.task_id) {
+      throw taskError(TASK_THREAD_ERROR_CODES.TASK_MISMATCH, 'wake belongs to a different task');
+    }
     const meta = parseWake(obs.metadata);
-    if (!meta) throw new Error('wake metadata missing');
-    if (meta.status !== 'pending') throw new Error(`wake is ${meta.status}`);
+    if (!meta) throw taskError(TASK_THREAD_ERROR_CODES.METADATA_MISSING, 'wake metadata missing');
+    if (meta.status !== 'pending') {
+      throw taskError(statusErrorCode(meta.status, 'wake'), `wake is ${meta.status}`);
+    }
     this.store.storage.transaction(() => {
       meta.status = 'cancelled';
       this.store.storage.updateObservationMetadata(wake_observation_id, JSON.stringify(meta));

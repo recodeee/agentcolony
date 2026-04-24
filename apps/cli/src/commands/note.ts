@@ -1,8 +1,8 @@
-import { join } from 'node:path';
-import { loadSettings, resolveDataDir } from '@colony/config';
-import { MemoryStore } from '@colony/core';
+import { loadSettings } from '@colony/config';
+import type { MemoryStore } from '@colony/core';
 import type { Command } from 'commander';
 import kleur from 'kleur';
+import { withStore } from '../util/store.js';
 
 /**
  * Reserved session identifier for human scratch notes. Using a fixed id
@@ -41,9 +41,7 @@ export function registerNoteCommand(program: Command): void {
       }
 
       const settings = loadSettings();
-      const dbPath = join(resolveDataDir(settings.dataDir), 'data.db');
-      const store = new MemoryStore({ dbPath, settings });
-      try {
+      await withStore(settings, (store) => {
         ensureObserverSession(store);
         const id = store.addObservation({
           session_id: OBSERVER_SESSION_ID,
@@ -55,8 +53,6 @@ export function registerNoteCommand(program: Command): void {
         process.stdout.write(
           `${kleur.green('✓')} note #${id} at ${when}${opts.task ? ` on task #${opts.task}` : ''}\n`,
         );
-      } finally {
-        store.close();
-      }
+      });
     });
 }

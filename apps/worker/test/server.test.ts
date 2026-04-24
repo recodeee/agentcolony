@@ -123,6 +123,28 @@ describe('worker HTTP', () => {
     });
   });
 
+  it('GET /api/hivemind reuses a short cache during browser refresh bursts', async () => {
+    const repoRoot = join(dir, 'repo-runtime-cache');
+    seedRuntime(repoRoot);
+    const appWithRuntime = buildApp(store, undefined, { hivemindRepoRoots: [repoRoot] });
+
+    const first = (await (await appWithRuntime.request('/api/hivemind')).json()) as {
+      session_count: number;
+    };
+    rmSync(join(repoRoot, '.omx'), { recursive: true, force: true });
+    const cached = (await (await appWithRuntime.request('/api/hivemind')).json()) as {
+      session_count: number;
+    };
+    await new Promise((resolve) => setTimeout(resolve, 550));
+    const refreshed = (await (await appWithRuntime.request('/api/hivemind')).json()) as {
+      session_count: number;
+    };
+
+    expect(first.session_count).toBe(1);
+    expect(cached.session_count).toBe(1);
+    expect(refreshed.session_count).toBe(0);
+  });
+
   it('GET /api/hivemind returns GX file-lock fallback lanes', async () => {
     const repoRoot = join(dir, 'repo-file-locks');
     seedFileLocks(repoRoot);
