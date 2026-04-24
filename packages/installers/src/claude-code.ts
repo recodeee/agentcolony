@@ -7,7 +7,10 @@ import type { InstallContext, Installer } from './types.js';
 interface ClaudeSettings {
   hooks?: Record<
     string,
-    Array<{ matcher?: string; hooks: Array<{ type: string; command: string }> }>
+    Array<{
+      matcher?: string;
+      hooks: Array<{ type: string; command: string; [key: string]: unknown }>;
+    }>
   >;
   mcpServers?: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
 }
@@ -22,6 +25,42 @@ const HOOK_NAMES: Array<[string, string]> = [
 
 function settingsFile(): string {
   return join(homedir(), '.claude', 'settings.json');
+}
+
+function isColonyHookCommand(command: string, hookId: string): boolean {
+  const normalized = command.replace(/["']/g, ' ').replace(/\s+/g, ' ').trim();
+  return /\bcolony(?:\.js)?\b/.test(normalized) && normalized.includes(` hook run ${hookId}`);
+}
+
+function installColonyHook(
+  existing: NonNullable<ClaudeSettings['hooks']>[string] | undefined,
+  command: string,
+  hookId: string,
+): NonNullable<ClaudeSettings['hooks']>[string] {
+  const filtered = removeColonyHook(existing, hookId);
+  return [
+    ...filtered,
+    {
+      hooks: [
+        {
+          type: 'command',
+          command,
+        },
+      ],
+    },
+  ];
+}
+
+function removeColonyHook(
+  existing: NonNullable<ClaudeSettings['hooks']>[string] | undefined,
+  hookId: string,
+): NonNullable<ClaudeSettings['hooks']>[string] {
+  return (existing ?? [])
+    .map((entry) => ({
+      ...entry,
+      hooks: entry.hooks.filter((hook) => !isColonyHookCommand(hook.command, hookId)),
+    }))
+    .filter((entry) => entry.hooks.length > 0);
 }
 
 export const claudeCode: Installer = {
@@ -40,16 +79,8 @@ export const claudeCode: Installer = {
     const nodeBin = shellQuote(ctx.nodeBin);
     const cliPath = shellQuote(ctx.cliPath);
     for (const [claudeName, hookId] of HOOK_NAMES) {
-      hooks[claudeName] = [
-        {
-          hooks: [
-            {
-              type: 'command',
-              command: `${nodeBin} ${cliPath} hook run ${hookId} --ide claude-code`,
-            },
-          ],
-        },
-      ];
+      const command = `${nodeBin} ${cliPath} hook run ${hookId} --ide claude-code`;
+      hooks[claudeName] = installColonyHook(hooks[claudeName], command, hookId);
     }
     const mcpServers: NonNullable<ClaudeSettings['mcpServers']> = { ...(current.mcpServers ?? {}) };
     delete mcpServers.cavemem;
@@ -67,7 +98,11 @@ export const claudeCode: Installer = {
     const path = settingsFile();
     const current = readJson<ClaudeSettings>(path, {});
     if (current.hooks) {
-      for (const [claudeName] of HOOK_NAMES) delete current.hooks[claudeName];
+      for (const [claudeName, hookId] of HOOK_NAMES) {
+        const remaining = removeColonyHook(current.hooks[claudeName], hookId);
+        if (remaining.length > 0) current.hooks[claudeName] = remaining;
+        else delete current.hooks[claudeName];
+      }
     }
     if (current.mcpServers) {
       delete current.mcpServers.colony;
