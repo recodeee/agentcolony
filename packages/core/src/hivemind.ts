@@ -1,5 +1,6 @@
 import { type Dirent, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, delimiter, join, resolve } from 'node:path';
+import { inferIdeFromSessionId } from './infer-ide.js';
 
 const ACTIVE_SESSIONS_RELATIVE_DIR = join('.omx', 'state', 'active-sessions');
 const FILE_LOCKS_RELATIVE_PATH = join('.omx', 'state', 'agent-file-locks.json');
@@ -174,6 +175,9 @@ function normalizeActiveSession(
   const activity = classifyActiveSession({ state, lastHeartbeatAt, pidAlive, now });
   const latestTaskPreview =
     readString(input.latestTaskPreview) || readString(input.latest_task_preview);
+  const sessionKey = readString(input.sessionKey) || readString(input.session_key);
+  const agent = activeSessionAgent(input, branch, sessionKey);
+  const cli = activeSessionCli(input, branch, sessionKey);
 
   return {
     repo_root: repoRoot,
@@ -182,8 +186,8 @@ function normalizeActiveSession(
     task: latestTaskPreview || taskName,
     task_name: taskName,
     latest_task_preview: latestTaskPreview,
-    agent: readString(input.agentName) || readString(input.agent_name) || 'agent',
-    cli: readString(input.cliName) || readString(input.cli_name) || 'codex',
+    agent,
+    cli,
     state,
     activity,
     activity_summary: activeActivitySummary(activity, state, lastHeartbeatAt, pidAlive, now),
@@ -199,7 +203,7 @@ function normalizeActiveSession(
     routing_reason: readString(input.taskRoutingReason) || readString(input.routing_reason),
     snapshot_name: '',
     project_name: '',
-    session_key: readString(input.sessionKey) || readString(input.session_key),
+    session_key: sessionKey,
     locked_file_count: 0,
     locked_file_preview: [],
     file_path: filePath,
@@ -656,6 +660,11 @@ function readString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readConcreteString(value: unknown): string {
+  const text = readString(value);
+  return text && text.toLowerCase() !== 'unknown' ? text : '';
+}
+
 function normalizeState(value: string): string {
   const normalized = value.toLowerCase();
   return ['working', 'thinking', 'idle'].includes(normalized) ? normalized : '';
@@ -697,6 +706,40 @@ function isPidAlive(pid: number): boolean {
 function deriveAgentName(branch: string): string {
   const parts = branch.split('/').filter(Boolean);
   return parts[0] === 'agent' && parts[1] ? parts[1] : 'agent';
+}
+
+function activeSessionAgent(input: JsonRecord, branch: string, sessionKey: string): string {
+  const recorded = readConcreteString(input.agentName) || readConcreteString(input.agent_name);
+  if (recorded && recorded !== 'agent') return agentFromIde(recorded);
+
+  const branchAgent = deriveAgentName(branch);
+  if (branchAgent !== 'agent') return branchAgent;
+
+  const sessionAgent = agentFromIde(inferIdeFromSessionId(sessionKey) ?? '');
+  if (sessionAgent) return sessionAgent;
+
+  const cliAgent = agentFromIde(
+    readConcreteString(input.cliName) || readConcreteString(input.cli_name),
+  );
+  return cliAgent || recorded || 'agent';
+}
+
+function activeSessionCli(input: JsonRecord, branch: string, sessionKey: string): string {
+  const recorded = readConcreteString(input.cliName) || readConcreteString(input.cli_name);
+  if (recorded) return recorded;
+
+  const inferred = inferIdeFromSessionId(sessionKey);
+  if (inferred) return inferred;
+
+  const branchAgent = deriveAgentName(branch);
+  if (branchAgent !== 'agent') return branchAgent === 'claude' ? 'claude-code' : branchAgent;
+
+  return 'codex';
+}
+
+function agentFromIde(ide: string): string {
+  if (ide === 'claude-code') return 'claude';
+  return ide;
 }
 
 function isRecord(value: unknown): value is JsonRecord {
