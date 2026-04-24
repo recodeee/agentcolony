@@ -28,7 +28,7 @@ async function seed(): Promise<{ a: number; b: number }> {
 }
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-mcp-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-mcp-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
   const server = buildServer(store, defaultSettings);
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

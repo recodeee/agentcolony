@@ -35,10 +35,13 @@ export function registerHookCommand(program: Command): void {
       const hookName = name as HookName;
       const raw = await readStdin();
       const parsed = raw.trim() ? safeJson(raw) : {};
+      const sessionId = readString(parsed.session_id) ?? 'unknown';
+      const ide = opts.ide ?? readString(parsed.ide) ?? inferIdeFromSessionId(sessionId);
       const input = {
-        session_id: typeof parsed.session_id === 'string' ? parsed.session_id : 'unknown',
         ...parsed,
-        ...(opts.ide ? { ide: opts.ide } : {}),
+        session_id: sessionId,
+        cwd: readString(parsed.cwd) ?? process.cwd(),
+        ...(ide ? { ide } : {}),
       } as Parameters<typeof runHook>[1];
 
       const result = await runHook(hookName, input);
@@ -81,6 +84,17 @@ function safeJson(s: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function inferIdeFromSessionId(sessionId: string): string | undefined {
+  const prefix = sessionId.split('@')[0]?.toLowerCase();
+  if (prefix === 'codex') return 'codex';
+  if (prefix === 'claude' || prefix === 'claude-code') return 'claude-code';
+  return undefined;
 }
 
 function readStdin(): Promise<string> {

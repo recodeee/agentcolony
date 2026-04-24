@@ -25,7 +25,7 @@ function seedTwoSessionTask(): number {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-pheromone-hooks-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-pheromone-hooks-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
 });
 
@@ -94,7 +94,7 @@ describe('buildPheromoneConflictPreface', () => {
     expect(preface).toContain('pheromone');
   });
 
-  it("does not warn about files I have never touched", () => {
+  it('does not warn about files I have never touched', () => {
     seedTwoSessionTask();
     // B edits solo.ts; A never touches it.
     depositPheromoneFromToolUse(store, {
@@ -115,15 +115,17 @@ describe('buildPheromoneConflictPreface', () => {
     seedTwoSessionTask();
     // One-deposit trail from B is exactly at the 1.0 threshold — overlap
     // must fire. But an artificially weaker trail must not.
+    const taskId = store.storage.findActiveTaskForSession('A');
+    if (taskId === undefined) throw new Error('expected active task');
     store.storage.upsertPheromone({
-      task_id: store.storage.findActiveTaskForSession('A')!,
+      task_id: taskId,
       file_path: 'weak.ts',
       session_id: 'B',
       strength: 0.3,
       deposited_at: Date.now(),
     });
     store.storage.upsertPheromone({
-      task_id: store.storage.findActiveTaskForSession('A')!,
+      task_id: taskId,
       file_path: 'weak.ts',
       session_id: 'A',
       strength: 0.3,

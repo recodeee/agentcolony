@@ -30,7 +30,7 @@ function seedTask(created_by: string): number {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-pheromones-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-pheromones-'));
   storage = new Storage(join(dir, 'test.db'));
 });
 

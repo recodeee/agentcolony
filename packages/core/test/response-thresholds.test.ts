@@ -23,7 +23,7 @@ function seed(...ids: string[]): void {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-thresholds-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-thresholds-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
 });
 
@@ -180,7 +180,7 @@ describe('TaskThread.handOff suggested_candidates integration', () => {
     expect(meta.suggested_candidates?.find((c) => c.agent === 'claude-sender')).toBeUndefined();
   });
 
-  it("leaves suggested_candidates undefined for directed handoffs", () => {
+  it('leaves suggested_candidates undefined for directed handoffs', () => {
     seed('claude-a', 'codex-a');
     const thread = TaskThread.open(store, {
       repo_root: '/r',

@@ -32,7 +32,7 @@ let dir: string;
 let store: MemoryStore;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-core-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-core-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
   store.startSession({ id: 's1', ide: 'test', cwd: '/tmp' });
   store.addObservation({

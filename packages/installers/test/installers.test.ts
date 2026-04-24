@@ -13,7 +13,7 @@ let originalHome: string | undefined;
 let ctx: InstallContext;
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), 'cavemem-ins-'));
+  home = mkdtempSync(join(tmpdir(), 'colony-ins-'));
   originalHome = process.env.HOME;
   process.env.HOME = home;
   ctx = {

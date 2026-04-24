@@ -23,7 +23,7 @@ function seedTwoSessionTask(): { task_id: number; repo_root: string; branch: str
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-proposal-hooks-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-proposal-hooks-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
 });
 

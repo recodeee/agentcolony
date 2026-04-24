@@ -8,7 +8,7 @@ let dir: string;
 let storage: Storage;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-'));
   storage = new Storage(join(dir, 'test.db'));
 });
 
@@ -18,6 +18,56 @@ afterEach(() => {
 });
 
 describe('Storage', () => {
+  it('fills orphan session cwd and ide when richer hook payload arrives', () => {
+    storage.createSession({
+      id: 'codex@abc',
+      ide: 'unknown',
+      cwd: null,
+      started_at: 100,
+      metadata: null,
+    });
+    storage.createSession({
+      id: 'codex@abc',
+      ide: 'codex',
+      cwd: '/repo',
+      started_at: 200,
+      metadata: JSON.stringify({ source: 'hook' }),
+    });
+
+    const row = storage.getSession('codex@abc');
+    expect(row).toMatchObject({
+      id: 'codex@abc',
+      ide: 'codex',
+      cwd: '/repo',
+      started_at: 100,
+      ended_at: null,
+    });
+    expect(row?.metadata).toBe(JSON.stringify({ source: 'hook' }));
+  });
+
+  it('preserves known session cwd and ide on weaker duplicate payloads', () => {
+    storage.createSession({
+      id: 'codex@known',
+      ide: 'codex',
+      cwd: '/repo',
+      started_at: 100,
+      metadata: null,
+    });
+    storage.createSession({
+      id: 'codex@known',
+      ide: 'unknown',
+      cwd: null,
+      started_at: 200,
+      metadata: null,
+    });
+
+    expect(storage.getSession('codex@known')).toMatchObject({
+      ide: 'codex',
+      cwd: '/repo',
+      started_at: 100,
+    });
+  });
+
   it('stores and retrieves observations', () => {
     storage.createSession({
       id: 'sess-1',

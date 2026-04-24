@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createProgram } from '../src/index.js';
 
-describe('cavemem CLI program', () => {
+describe('Colony CLI program', () => {
   it('registers every top-level command', () => {
     const program = createProgram();
     const names = program.commands.map((c) => c.name()).sort();

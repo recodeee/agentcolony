@@ -27,7 +27,7 @@ function seedTwoSessionTask(): number {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-auto-claim-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-auto-claim-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
 });
 

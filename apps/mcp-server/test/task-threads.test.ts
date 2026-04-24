@@ -42,7 +42,7 @@ function seedTwoSessionTask(): { task_id: number; sessionA: string; sessionB: st
 }
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-task-threads-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-task-threads-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
   const server = buildServer(store, defaultSettings);
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
