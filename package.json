@@ -26,6 +26,9 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "clean": "pnpm -r exec rm -rf dist && rm -rf node_modules/.cache",
+    "p": "pnpm run publish:cli",
+    "publish:cli": "pnpm --filter @imdeadpool/colony pack:release && npm publish apps/cli/release --access public --cache /tmp/agents-hivemind-npm-cache",
+    "publish:cli:dry-run": "pnpm --filter @imdeadpool/colony pack:release && npm publish apps/cli/release --dry-run --access public --cache /tmp/agents-hivemind-npm-cache",
     "release": "changeset publish"
   },
   "devDependencies": {
