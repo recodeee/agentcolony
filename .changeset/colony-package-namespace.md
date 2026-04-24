@@ -1,5 +1,5 @@
 ---
-"colony": patch
+"@imdeadpool/colony": patch
 "@colony/compress": patch
 "@colony/config": patch
 "@colony/core": patch

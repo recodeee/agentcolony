@@ -1,5 +1,5 @@
 {
-  "name": "colony",
+  "name": "@imdeadpool/colony",
   "version": "0.2.0",
   "license": "MIT",
   "description": "Local-first memory and coordination for Claude Code, Gemini CLI, OpenCode, Codex, and Cursor.",
@@ -19,7 +19,7 @@
   "homepage": "https://github.com/recodeee/colony",
   "repository": {
     "type": "git",
-    "url": "https://github.com/recodeee/colony.git"
+    "url": "git+https://github.com/recodeee/colony.git"
   },
   "bugs": {
     "url": "https://github.com/recodeee/colony/issues"

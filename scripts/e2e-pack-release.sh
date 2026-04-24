@@ -27,7 +27,7 @@ cleanup
 mkdir -p "$PACK" "$PREFIX" "$HOME_DIR"
 
 echo "==> 1. pack:release (build + pack-release.mjs)"
-pnpm --filter colony pack:release >/dev/null
+pnpm --filter @imdeadpool/colony pack:release >/dev/null
 
 REL="$REPO/apps/cli/release"
 test -f "$REL/package.json" || { echo "release dir missing package.json"; exit 1; }

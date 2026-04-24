@@ -41,7 +41,7 @@ echo "==> 1. build everything"
 pnpm build >/dev/null
 
 echo "==> 2. stage publish files (README, LICENSE, hooks-scripts)"
-pnpm --filter colony stage-publish
+pnpm --filter @imdeadpool/colony stage-publish
 
 echo "==> 3. npm pack from apps/cli"
 VERSION=$(node -e "console.log(require('$REPO/apps/cli/package.json').version)")
