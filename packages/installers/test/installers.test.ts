@@ -81,6 +81,7 @@ describe('claude-code installer', () => {
     await claudeCode.install(ctx); // run twice
     const second = JSON.parse(readFileSync(settingsPath, 'utf8')) as typeof first;
     expect(Object.keys(second.hooks).sort()).toEqual(Object.keys(first.hooks).sort());
+    expect(second.hooks.SessionStart).toHaveLength(1);
     // No duplicate or stale MCP namespace entries.
     expect(Object.keys(second.mcpServers)).toEqual(['colony']);
   });
@@ -96,7 +97,23 @@ describe('claude-code installer', () => {
           other: { command: '/other/bin' },
           cavemem: { command: '/old/bin', args: ['old-mcp'] },
         },
-        hooks: { CustomEvent: [{ hooks: [{ type: 'command', command: 'noop' }] }] },
+        hooks: {
+          CustomEvent: [{ hooks: [{ type: 'command', command: 'noop' }] }],
+          PostToolUse: [
+            {
+              matcher: '*',
+              hooks: [{ type: 'command', command: 'node /home/me/.claude/hooks/context.js' }],
+            },
+            {
+              hooks: [
+                {
+                  type: 'command',
+                  command: '/old/bin/colony hook run post-tool-use --ide claude-code',
+                },
+              ],
+            },
+          ],
+        },
       }),
     );
 
@@ -114,6 +131,20 @@ describe('claude-code installer', () => {
     });
     expect(installed.mcpServers.cavemem).toBeUndefined();
     expect(installed.hooks.CustomEvent).toBeDefined();
+    expect(installed.hooks.PostToolUse).toEqual([
+      {
+        matcher: '*',
+        hooks: [{ type: 'command', command: 'node /home/me/.claude/hooks/context.js' }],
+      },
+      {
+        hooks: [
+          {
+            type: 'command',
+            command: `${ctx.nodeBin} ${ctx.cliPath} hook run post-tool-use --ide claude-code`,
+          },
+        ],
+      },
+    ]);
 
     await claudeCode.uninstall(ctx);
     const after = JSON.parse(readFileSync(settingsPath, 'utf8')) as typeof installed;
@@ -123,6 +154,12 @@ describe('claude-code installer', () => {
     expect(after.mcpServers.cavemem).toBeUndefined();
     expect(after.hooks.SessionStart).toBeUndefined();
     expect(after.hooks.CustomEvent).toBeDefined();
+    expect(after.hooks.PostToolUse).toEqual([
+      {
+        matcher: '*',
+        hooks: [{ type: 'command', command: 'node /home/me/.claude/hooks/context.js' }],
+      },
+    ]);
   });
 
   it('quotes paths with spaces in hook command strings (Windows)', async () => {
