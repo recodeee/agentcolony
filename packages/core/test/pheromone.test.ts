@@ -24,7 +24,7 @@ function seedTwoSessionTask(): number {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-pheromone-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-pheromone-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
 });
 

@@ -16,7 +16,7 @@ function seed(...ids: string[]): void {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-task-thread-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-task-thread-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
 });
 

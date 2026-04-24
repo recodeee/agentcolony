@@ -20,7 +20,7 @@ function seedSessions(...ids: string[]): void {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-tasks-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-tasks-'));
   storage = new Storage(join(dir, 'test.db'));
 });
 

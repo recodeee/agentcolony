@@ -20,7 +20,7 @@ function seed(...ids: string[]): void {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-proposals-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-proposals-'));
   storage = new Storage(join(dir, 'test.db'));
 });
 
@@ -54,7 +54,8 @@ describe('proposals storage', () => {
       promoted_at: null,
       task_id: null,
     });
-    expect(JSON.parse(row!.touches_files)).toEqual(['src/core.ts', 'src/ranker.ts']);
+    if (!row) throw new Error('expected proposal row');
+    expect(JSON.parse(row.touches_files)).toEqual(['src/core.ts', 'src/ranker.ts']);
   });
 
   it('updateProposal applies partial patch and leaves other fields intact', () => {

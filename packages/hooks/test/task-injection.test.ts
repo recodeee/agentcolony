@@ -25,7 +25,7 @@ function fakeGitCheckout(path: string, branch: string): void {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-hook-inject-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-hook-inject-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
   repo = join(dir, 'repo');
   mkdirSync(repo, { recursive: true });

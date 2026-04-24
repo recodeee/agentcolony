@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings } from '@cavemem/config';
@@ -10,7 +10,7 @@ let dir: string;
 let store: MemoryStore;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-hooks-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-hooks-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
 });
 
@@ -156,6 +156,47 @@ describe('runHook', () => {
     expect(c.ok).toBe(true);
     expect(store.storage.getSession('orphan')?.ide).toBe('unknown');
     expect(store.timeline('orphan')).toHaveLength(2);
+  });
+
+  it('repo-binds downstream hooks when SessionStart never fired but cwd is known', async () => {
+    const repo = join(dir, 'repo');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    writeFileSync(join(repo, '.git', 'HEAD'), 'ref: refs/heads/agent/codex/live\n', 'utf8');
+
+    const r = await runHook(
+      'user-prompt-submit',
+      {
+        session_id: 'codex@late',
+        ide: 'codex',
+        cwd: repo,
+        prompt: 'fix colony cwd registration',
+      },
+      { store },
+    );
+
+    expect(r.ok).toBe(true);
+    expect(store.storage.getSession('codex@late')).toMatchObject({
+      ide: 'codex',
+      cwd: repo,
+    });
+    expect(store.storage.listTasks(5)[0]).toMatchObject({
+      repo_root: repo,
+      branch: 'agent/codex/live',
+    });
+
+    const sessionFile = join(repo, '.omx', 'state', 'active-sessions', 'codex_late.json');
+    expect(existsSync(sessionFile)).toBe(true);
+    const active = JSON.parse(readFileSync(sessionFile, 'utf8')) as Record<string, unknown>;
+    expect(active).toMatchObject({
+      repoRoot: repo,
+      branch: 'agent/codex/live',
+      agentName: 'codex',
+      cliName: 'codex',
+      worktreePath: repo,
+      latestTaskPreview: 'fix colony cwd registration',
+      state: 'thinking',
+      sessionKey: 'codex@late',
+    });
   });
 
   it('post-tool-use accepts Claude Code field names (tool_name, tool_response)', async () => {

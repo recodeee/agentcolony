@@ -95,6 +95,7 @@ export function buildTaskPreface(
     // accepting. Purely advisory — anyone eligible can still accept.
     if (h.meta.to_agent === 'any' && h.meta.suggested_candidates?.length) {
       const top = h.meta.suggested_candidates[0];
+      if (!top) continue;
       const mine = h.meta.suggested_candidates.find((c) => c.agent === agent);
       const hints = [`top match: ${top.agent} (${top.score.toFixed(2)})`];
       if (mine && mine.agent !== top.agent) {
@@ -121,10 +122,7 @@ export function buildTaskPreface(
  * task_reinforce) or silently ignore. A quiet queue with zero pending
  * is the right UX — the preface stays empty and doesn't waste context.
  */
-export function buildProposalPreface(
-  store: MemoryStore,
-  input: Pick<HookInput, 'cwd'>,
-): string {
+export function buildProposalPreface(store: MemoryStore, input: Pick<HookInput, 'cwd'>): string {
   const cwd = input.cwd;
   if (!cwd) return '';
   const detected = detectRepoBranch(cwd);

@@ -80,7 +80,7 @@ function seedFileLocks(repoRoot: string): void {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-worker-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-worker-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
   app = buildApp(store);
 });

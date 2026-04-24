@@ -16,7 +16,7 @@ function seed(...ids: string[]): void {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-proposal-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-proposal-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
 });
 
@@ -106,7 +106,8 @@ describe('ProposalSystem.reinforce', () => {
     // The promoted task should exist on a synthetic branch so it doesn't
     // collide with the source branch's task via the (repo_root, branch)
     // UNIQUE constraint.
-    const task = store.storage.getTask(proposal!.task_id!);
+    if (!proposal?.task_id) throw new Error('expected promoted task id');
+    const task = store.storage.getTask(proposal.task_id);
     expect(task?.branch).toBe(`b/proposal-${id}`);
     expect(task?.title).toBe('the real thing');
   });
@@ -124,12 +125,12 @@ describe('ProposalSystem.reinforce', () => {
     });
     proposals.reinforce({ proposal_id: id, session_id: 'B', kind: 'explicit' });
     proposals.reinforce({ proposal_id: id, session_id: 'C', kind: 'explicit' });
-    const first_task_id = store.storage.getProposal(id)!.task_id;
+    const first_task_id = store.storage.getProposal(id)?.task_id;
     expect(first_task_id).not.toBeNull();
 
     const result = proposals.reinforce({ proposal_id: id, session_id: 'D', kind: 'explicit' });
     expect(result.promoted).toBe(false);
-    expect(store.storage.getProposal(id)!.task_id).toBe(first_task_id);
+    expect(store.storage.getProposal(id)?.task_id).toBe(first_task_id);
   });
 });
 
@@ -229,7 +230,7 @@ describe('ProposalSystem.foragingReport', () => {
     });
     proposals.reinforce({ proposal_id: strong, session_id: 'B', kind: 'explicit' });
     // Weak proposal: proposer only, strength ~1.0.
-    const weak = proposals.propose({
+    proposals.propose({
       repo_root: '/r',
       branch: 'b',
       summary: 'weak',

@@ -61,11 +61,27 @@ export class Storage {
   // --- sessions ---
 
   createSession(s: Omit<SessionRow, 'ended_at'>): void {
-    // INSERT OR IGNORE: SessionStart re-fires on resume/clear/compact with the
-    // same session_id, and we want the original row (and ended_at=null) preserved.
+    // SessionStart re-fires on resume/clear/compact with the same session_id,
+    // so preserve the original started_at / ended_at values. If a downstream
+    // hook had to create an orphan row first, later richer hook payloads can
+    // still fill in the IDE and cwd so colony/task binding is not lost.
     this.db
       .prepare(
-        'INSERT OR IGNORE INTO sessions(id, ide, cwd, started_at, metadata) VALUES (?, ?, ?, ?, ?)',
+        `INSERT INTO sessions(id, ide, cwd, started_at, metadata)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           ide = CASE
+             WHEN sessions.ide = 'unknown' AND excluded.ide != 'unknown' THEN excluded.ide
+             ELSE sessions.ide
+           END,
+           cwd = CASE
+             WHEN sessions.cwd IS NULL AND excluded.cwd IS NOT NULL THEN excluded.cwd
+             ELSE sessions.cwd
+           END,
+           metadata = CASE
+             WHEN sessions.metadata IS NULL AND excluded.metadata IS NOT NULL THEN excluded.metadata
+             ELSE sessions.metadata
+           END`,
       )
       .run(s.id, s.ide, s.cwd, s.started_at, s.metadata);
   }
@@ -461,15 +477,9 @@ export class Storage {
   }
 
   /** One pheromone row for (task, file, session) or undefined. */
-  getPheromone(
-    task_id: number,
-    file_path: string,
-    session_id: string,
-  ): PheromoneRow | undefined {
+  getPheromone(task_id: number, file_path: string, session_id: string): PheromoneRow | undefined {
     return this.db
-      .prepare(
-        'SELECT * FROM pheromones WHERE task_id = ? AND file_path = ? AND session_id = ?',
-      )
+      .prepare('SELECT * FROM pheromones WHERE task_id = ? AND file_path = ? AND session_id = ?')
       .get(task_id, file_path, session_id) as PheromoneRow | undefined;
   }
 
@@ -538,9 +548,7 @@ export class Storage {
       task_id: patch.task_id === undefined ? current.task_id : patch.task_id,
     };
     this.db
-      .prepare(
-        'UPDATE proposals SET status = ?, promoted_at = ?, task_id = ? WHERE id = ?',
-      )
+      .prepare('UPDATE proposals SET status = ?, promoted_at = ?, task_id = ? WHERE id = ?')
       .run(next.status, next.promoted_at, next.task_id, id);
   }
 
@@ -589,9 +597,9 @@ export class Storage {
   }
 
   getAgentProfile(agent: string): AgentProfileRow | undefined {
-    return this.db
-      .prepare('SELECT * FROM agent_profiles WHERE agent = ?')
-      .get(agent) as AgentProfileRow | undefined;
+    return this.db.prepare('SELECT * FROM agent_profiles WHERE agent = ?').get(agent) as
+      | AgentProfileRow
+      | undefined;
   }
 
   listAgentProfiles(): AgentProfileRow[] {

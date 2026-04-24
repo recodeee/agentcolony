@@ -8,7 +8,7 @@ let dir: string;
 let storage: Storage;
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-agent-profiles-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-agent-profiles-'));
   storage = new Storage(join(dir, 'test.db'));
 });
 
@@ -44,7 +44,8 @@ describe('agent profiles storage', () => {
       updated_at: 2_000,
     });
     const row = storage.getAgentProfile('codex');
-    expect(JSON.parse(row!.capabilities)).toEqual({ api_work: 0.9, infra_work: 0.8 });
+    if (!row) throw new Error('expected codex profile');
+    expect(JSON.parse(row.capabilities)).toEqual({ api_work: 0.9, infra_work: 0.8 });
     expect(row?.updated_at).toBe(2_000);
   });
 

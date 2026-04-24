@@ -35,7 +35,7 @@ function mockEmbedder(model: string, dim: number): Embedder {
 }
 
 beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cavemem-embed-'));
+  dir = mkdtempSync(join(tmpdir(), 'colony-embed-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: buildSettings() });
 });
 
