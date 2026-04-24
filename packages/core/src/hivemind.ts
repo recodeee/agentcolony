@@ -734,7 +734,7 @@ function activeSessionCli(input: JsonRecord, branch: string, sessionKey: string)
   const branchAgent = deriveAgentName(branch);
   if (branchAgent !== 'agent') return branchAgent === 'claude' ? 'claude-code' : branchAgent;
 
-  return 'codex';
+  return 'unknown';
 }
 
 function agentFromIde(ide: string): string {

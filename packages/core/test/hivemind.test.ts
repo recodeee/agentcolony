@@ -12,6 +12,43 @@ afterEach(() => {
 });
 
 describe('readHivemind', () => {
+  it('keeps cli unknown when no active-session identity signal is concrete', () => {
+    dir = mkdtempSync(join(tmpdir(), 'colony-hivemind-'));
+    const repoRoot = join(dir, 'repo');
+    const activeSessionDir = join(repoRoot, '.omx', 'state', 'active-sessions');
+    const now = new Date().toISOString();
+    mkdirSync(activeSessionDir, { recursive: true });
+    writeFileSync(
+      join(activeSessionDir, 'mcp-123.json'),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          repoRoot,
+          branch: 'main',
+          taskName: 'MCP tool heartbeat',
+          agentName: 'unknown',
+          cliName: 'unknown',
+          sessionKey: 'mcp-123',
+          worktreePath: repoRoot,
+          startedAt: now,
+          lastHeartbeatAt: now,
+          state: 'working',
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+
+    const snapshot = readHivemind({ repoRoot, now: Date.parse(now), includeStale: true });
+
+    expect(snapshot.sessions[0]).toMatchObject({
+      branch: 'main',
+      agent: 'agent',
+      cli: 'unknown',
+    });
+  });
+
   it('derives codex owner when active-session telemetry says unknown', () => {
     dir = mkdtempSync(join(tmpdir(), 'colony-hivemind-'));
     const repoRoot = join(dir, 'repo');
