@@ -325,6 +325,47 @@ describe('MCP server', () => {
     });
   });
 
+  it('hivemind_context marks bare managed worktrees as stranded lanes', async () => {
+    const repoRoot = join(dir, 'repo-stranded');
+    const worktreePath = join(
+      repoRoot,
+      '.omx',
+      'agent-worktrees',
+      'recodee__codex__create-public-terms-page-2026-04-27-12-13',
+    );
+    mkdirSync(join(worktreePath, '.git'), { recursive: true });
+    writeFileSync(
+      join(worktreePath, '.git', 'HEAD'),
+      'ref: refs/heads/agent/codex/create-public-terms-page-2026-04-27-12-13\n',
+      'utf8',
+    );
+
+    const res = await client.callTool({
+      name: 'hivemind_context',
+      arguments: { repo_root: repoRoot, limit: 5 },
+    });
+    const text = (res.content as Array<{ type: string; text: string }>)[0]?.text ?? '{}';
+    const payload = JSON.parse(text) as {
+      summary: { lane_count: number; needs_attention_count: number; next_action: string };
+      counts: Record<string, number>;
+      lanes: Array<Record<string, unknown>>;
+    };
+
+    expect(payload.summary.lane_count).toBe(1);
+    expect(payload.summary.needs_attention_count).toBe(1);
+    expect(payload.summary.next_action).toMatch(/needs_attention/);
+    expect(payload.counts.stalled).toBe(1);
+    expect(payload.lanes[0]).toMatchObject({
+      branch: 'agent/codex/create-public-terms-page-2026-04-27-12-13',
+      task: 'Stranded lane: create-public-terms-page-2026-04-27-12-13',
+      owner: 'codex/codex',
+      source: 'managed-worktree',
+      activity: 'stalled',
+      risk: 'stranded lane',
+      needs_attention: true,
+    });
+  });
+
   it('search returns compact hits (id, snippet, score, ts)', async () => {
     await seed();
     const res = await client.callTool({ name: 'search', arguments: { query: 'cargo' } });

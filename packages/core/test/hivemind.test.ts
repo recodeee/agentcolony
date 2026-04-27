@@ -89,4 +89,40 @@ describe('readHivemind', () => {
       cli: 'codex',
     });
   });
+
+  it('surfaces bare managed worktrees as stranded lanes', () => {
+    dir = mkdtempSync(join(tmpdir(), 'colony-hivemind-'));
+    const repoRoot = join(dir, 'repo');
+    const worktreePath = join(
+      repoRoot,
+      '.omx',
+      'agent-worktrees',
+      'recodee__codex__create-public-terms-page-2026-04-27-12-13',
+    );
+    mkdirSync(join(worktreePath, '.git'), { recursive: true });
+    writeFileSync(
+      join(worktreePath, '.git', 'HEAD'),
+      'ref: refs/heads/agent/codex/create-public-terms-page-2026-04-27-12-13\n',
+      'utf8',
+    );
+
+    const snapshot = readHivemind({
+      repoRoot,
+      now: Date.parse('2026-04-27T12:30:00.000Z'),
+    });
+
+    expect(snapshot.session_count).toBe(1);
+    expect(snapshot.counts.stalled).toBe(1);
+    expect(snapshot.sessions[0]).toMatchObject({
+      branch: 'agent/codex/create-public-terms-page-2026-04-27-12-13',
+      task: 'Stranded lane: create-public-terms-page-2026-04-27-12-13',
+      task_name: 'create-public-terms-page-2026-04-27-12-13',
+      agent: 'codex',
+      cli: 'codex',
+      source: 'managed-worktree',
+      activity: 'stalled',
+      routing_reason: 'stranded managed worktree',
+    });
+    expect(snapshot.sessions[0]?.activity_summary).toContain('Stranded managed worktree');
+  });
 });

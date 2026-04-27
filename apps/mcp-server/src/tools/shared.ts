@@ -150,6 +150,7 @@ function toContextLane(session: HivemindSession): HivemindContextLane {
 }
 
 function laneRisk(session: HivemindSession): string {
+  if (session.source === 'managed-worktree') return 'stranded lane';
   if (session.activity === 'dead') return 'dead session';
   if (session.activity === 'stalled') return 'stale telemetry';
   if (session.activity === 'unknown') return 'unknown runtime state';
