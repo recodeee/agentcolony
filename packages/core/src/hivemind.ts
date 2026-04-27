@@ -23,7 +23,7 @@ export interface HivemindOptions {
 
 export interface HivemindSession {
   repo_root: string;
-  source: 'active-session' | 'worktree-lock' | 'file-lock';
+  source: 'active-session' | 'worktree-lock' | 'file-lock' | 'managed-worktree';
   branch: string;
   task: string;
   task_name: string;
@@ -131,7 +131,15 @@ function readRepoSessions(repoRoot: string, now: number): HivemindSession[] {
     (session) => !activeWorktrees.has(resolve(session.worktree_path)),
   );
 
-  return mergeFileLockSessions(repoRoot, [...activeSessions, ...lockSessions], now);
+  const mergedSessions = mergeFileLockSessions(repoRoot, [...activeSessions, ...lockSessions], now);
+  const coveredWorktrees = new Set(
+    mergedSessions.map((session) => resolve(session.worktree_path)).filter(Boolean),
+  );
+  const strandedSessions = readManagedWorktreeSessions(repoRoot, now).filter(
+    (session) => !coveredWorktrees.has(resolve(session.worktree_path)),
+  );
+
+  return [...mergedSessions, ...strandedSessions];
 }
 
 function readActiveSessionFiles(repoRoot: string, now: number): HivemindSession[] {
@@ -421,6 +429,56 @@ function buildFileLockSession(
   };
 }
 
+function readManagedWorktreeSessions(repoRoot: string, now: number): HivemindSession[] {
+  const sessions: HivemindSession[] = [];
+  for (const relativeRoot of MANAGED_WORKTREE_ROOTS) {
+    const managedRoot = join(repoRoot, relativeRoot);
+    if (!existsSync(managedRoot)) continue;
+
+    for (const entry of safeReadDir(managedRoot)) {
+      if (!entry.isDirectory()) continue;
+      const worktreePath = join(managedRoot, entry.name);
+      const branch = readWorktreeBranch(worktreePath);
+      if (!branch.startsWith('agent/')) continue;
+
+      const updatedAt = readWorktreeUpdatedAt(worktreePath);
+      const startedAt = updatedAt || new Date(now).toISOString();
+      const taskName = taskNameFromBranch(branch) || entry.name;
+      sessions.push({
+        repo_root: resolve(repoRoot),
+        source: 'managed-worktree',
+        branch,
+        task: `Stranded lane: ${taskName}`,
+        task_name: taskName,
+        latest_task_preview: '',
+        agent: deriveAgentName(branch),
+        cli: branch.startsWith('agent/claude/') ? 'claude-code' : deriveAgentName(branch),
+        state: '',
+        activity: 'stalled',
+        activity_summary:
+          'Stranded managed worktree; no active session, AGENT.lock, or GX file locks found.',
+        worktree_path: resolve(worktreePath),
+        pid: null,
+        pid_alive: null,
+        started_at: startedAt,
+        last_heartbeat_at: '',
+        updated_at: updatedAt,
+        elapsed_seconds: elapsedSeconds(startedAt, now),
+        task_mode: '',
+        openspec_tier: '',
+        routing_reason: 'stranded managed worktree',
+        snapshot_name: '',
+        project_name: '',
+        session_key: '',
+        locked_file_count: 0,
+        locked_file_preview: [],
+        file_path: worktreePath,
+      });
+    }
+  }
+  return sessions;
+}
+
 function resolveFileLockWorktreePath(
   repoRoot: string,
   branch: string,
@@ -635,6 +693,19 @@ function readWorktreeBranch(worktreePath: string): string {
   } catch {
     return '';
   }
+}
+
+function readWorktreeUpdatedAt(worktreePath: string): string {
+  try {
+    return statSync(worktreePath).mtime.toISOString();
+  } catch {
+    return '';
+  }
+}
+
+function taskNameFromBranch(branch: string): string {
+  const parts = branch.split('/').filter(Boolean);
+  return parts.length >= 3 ? parts.slice(2).join('/') : branch;
 }
 
 function resolveGitDir(worktreePath: string): string {
