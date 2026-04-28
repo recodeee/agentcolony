@@ -18,6 +18,11 @@ Agent startup, resume, "what needs me?", and "what should I do next?" flows shou
 2. `attention_inbox` to see what needs your attention: handoffs, messages, wakes, stalled lanes, recent claim activity, and decaying hot files.
 3. `task_ready_for_agent` to choose available work matched to the current agent.
 
+Codex-style MCP tool names include the server prefix:
+`mcp__colony__hivemind_context`,
+`mcp__colony__attention_inbox`, and
+`mcp__colony__task_ready_for_agent`.
+
 Use `task_list` for browsing/debugging recent task threads. Use `task_ready_for_agent` for choosing what to work on next.
 
 Copy-paste startup:
