@@ -17,8 +17,16 @@ let client: Client;
 interface QueenPlanPreview {
   slug: string;
   title: string;
+  problem: string;
+  acceptance_criteria: string[];
   auto_archive: true;
-  subtasks: Array<{ title: string; file_scope: string[]; depends_on: number[] }>;
+  subtasks: Array<{
+    title: string;
+    description: string;
+    file_scope: string[];
+    depends_on: number[];
+    capability_hint: CapabilityHint;
+  }>;
 }
 
 interface QueenPublishResult {
@@ -48,6 +56,16 @@ interface CompleteResult {
   status: string;
   auto_archive: { status: string; reason?: string };
 }
+
+const FORBIDDEN_COMMAND_FIELDS = [
+  'assigned_agent',
+  'launch_agent',
+  'monitor_shell',
+  'monitor_shells',
+  'run_now',
+  'shell_monitor',
+  'shell_monitoring',
+] as const;
 
 async function call<T>(name: string, args: Record<string, unknown>): Promise<T> {
   const res = await client.callTool({ name, arguments: args });
@@ -128,14 +146,59 @@ afterEach(async () => {
 });
 
 describe('queen_plan_goal', () => {
-  it('previews the queen plan without publishing when dry_run is true', async () => {
+  it('previews plan structure and claimable subtasks without publishing when dry_run is true', async () => {
     const result = await call<QueenPlanPreview>('queen_plan_goal', queenArgs({ dry_run: true }));
 
     expect(result.slug).toBe('build-queen-mcp-surface');
     expect(result.title).toBe('Build queen MCP surface');
+    expect(result.problem).toBe('Lead agents need one call that decomposes and publishes work.');
+    expect(result.acceptance_criteria).toEqual([
+      'Tool publishes a claimable plan',
+      'Dry run previews without writes',
+    ]);
     expect(result.auto_archive).toBe(true);
-    expect(result.subtasks).toHaveLength(2);
+    expect(result.subtasks).toEqual([
+      {
+        title: 'Update shared infrastructure scope',
+        description: 'Update remaining non-UI/non-API files for Build queen MCP surface.',
+        file_scope: ['apps/mcp-server/src/tools/queen.ts'],
+        depends_on: [],
+        capability_hint: 'infra_work',
+      },
+      {
+        title: 'Add targeted tests',
+        description: 'Add or update tests after the implementation for Build queen MCP surface.',
+        file_scope: ['apps/mcp-server/test/queen.test.ts'],
+        depends_on: [0],
+        capability_hint: 'test_work',
+      },
+    ]);
+    expectNoCommanderFields(result);
     expect(existsSync(join(repoRoot, 'openspec/changes', result.slug, 'CHANGE.md'))).toBe(false);
+  });
+
+  it('exposes queen_plan_goal as a publish-only MCP surface, not a commander API', async () => {
+    const { tools } = await client.listTools();
+    const queenTool = tools.find((tool) => tool.name === 'queen_plan_goal');
+    const properties = Object.keys(queenTool?.inputSchema.properties ?? {});
+
+    expect(queenTool?.description).toContain('claim parts in parallel');
+    expect(queenTool?.description).toContain('task_plan_claim_subtask');
+    expect(properties).toEqual(
+      expect.arrayContaining([
+        'goal_title',
+        'problem',
+        'acceptance_criteria',
+        'repo_root',
+        'affected_files',
+        'ordering_hint',
+        'waves',
+        'finalizer',
+        'session_id',
+        'dry_run',
+      ]),
+    );
+    expectNoCommanderFields(queenTool);
   });
 
   it('publishes a claimable queen plan through an MCP client call', async () => {
@@ -322,6 +385,32 @@ function waveSubtask(n: number, label: string, capability_hint: CapabilityHint, 
     file_scope: [file],
     capability_hint,
   };
+}
+
+function expectNoCommanderFields(value: unknown): void {
+  const keys = new Set<string>();
+  collectKeys(value, keys);
+  for (const field of FORBIDDEN_COMMAND_FIELDS) {
+    expect(keys.has(field)).toBe(false);
+  }
+
+  const serialized = JSON.stringify(value).toLowerCase();
+  expect(serialized).not.toContain('launch_agent');
+  expect(serialized).not.toContain('assigned_agent');
+  expect(serialized).not.toContain('run_now');
+  expect(serialized).not.toMatch(/shell[_ -]?monitor/);
+}
+
+function collectKeys(value: unknown, keys: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const item of value) collectKeys(item, keys);
+    return;
+  }
+  if (typeof value !== 'object' || value === null) return;
+  for (const [key, nested] of Object.entries(value)) {
+    keys.add(key.toLowerCase());
+    collectKeys(nested, keys);
+  }
 }
 
 async function expectReadyOnly(planSlug: string, indexes: number[]): Promise<void> {
