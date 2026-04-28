@@ -19,6 +19,7 @@ import * as proposal from './tools/proposal.js';
 import * as readyQueue from './tools/ready-queue.js';
 import * as recall from './tools/recall.js';
 import * as relay from './tools/relay.js';
+import * as rescue from './tools/rescue.js';
 import * as search from './tools/search.js';
 import * as spec from './tools/spec.js';
 import * as suggest from './tools/suggest.js';
@@ -85,6 +86,7 @@ export function buildServer(store: MemoryStore, settings: Settings): McpServer {
   readyQueue.register(server, ctx);
   recall.register(server, ctx);
   suggest.register(server, ctx);
+  rescue.register(server, ctx);
 
   // Spec-driven dev lane (@colony/spec). Adds spec_read, spec_change_open,
   // spec_change_add_delta, spec_build_context, spec_build_record_failure,

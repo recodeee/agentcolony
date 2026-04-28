@@ -17,6 +17,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { type CaffeinateHandle, startCaffeinate } from './caffeinate.js';
 import { type EmbedLoopHandle, startEmbedLoop, stateFilePath } from './embed-loop.js';
+import { type RescueLoopHandle, startRescueLoop } from './rescue-loop.js';
 import { type StrandedSessionSummary, renderIndex, renderSession } from './viewer.js';
 
 const HIVEMIND_CACHE_TTL_MS = 500;
@@ -25,6 +26,7 @@ type BuildDiscrepancyReport = (store: MemoryStore, options: { since: number }) =
 export interface WorkerAppOptions {
   hivemindRepoRoots?: string[];
   discrepancyReportBuilder?: BuildDiscrepancyReport;
+  rescueLoop?: RescueLoopHandle;
 }
 
 export function buildApp(
@@ -59,6 +61,31 @@ export function buildApp(
     const since = Number(c.req.query('since') ?? Date.now() - 24 * 60 * 60_000);
     const report = reportBuilder(store, { since });
     return c.json(report);
+  });
+
+  app.get('/api/colony/stranded', (c) => {
+    return c.json(
+      options.rescueLoop?.lastScan() ?? {
+        stranded: [],
+        last_scan_at: null,
+        next_scan_at: null,
+      },
+    );
+  });
+
+  app.post('/api/colony/stranded/scan', async (c) => {
+    if (!options.rescueLoop) {
+      return c.json({ stranded: [], rescued: [], dry_run: true, error: 'rescue loop not running' });
+    }
+    const strandedAfterMinutes = c.req.query('stranded_after_minutes');
+    const parsed = strandedAfterMinutes !== undefined ? Number(strandedAfterMinutes) : undefined;
+    const scan = await options.rescueLoop.scan({
+      dry_run: true,
+      ...(parsed !== undefined && Number.isFinite(parsed) && parsed > 0
+        ? { stranded_after_minutes: parsed }
+        : {}),
+    });
+    return c.json(scan);
   });
 
   app.get('/api/colony/tasks', (c) => {
@@ -337,11 +364,13 @@ export async function start(): Promise<void> {
 
   let loop: EmbedLoopHandle | undefined;
   let caffeinate: CaffeinateHandle | undefined;
+  const handles: { rescueLoop?: RescueLoopHandle } = {};
   const servers: Array<ReturnType<typeof serve>> = [];
 
   const shutdown = async () => {
     removePidFile(pidFilePath(settings));
     caffeinate?.stop();
+    if (handles.rescueLoop) await handles.rescueLoop.stop();
     if (loop) await loop.stop();
     for (const s of servers) s.close();
     store.close();
@@ -417,7 +446,13 @@ export async function start(): Promise<void> {
     );
   }
 
-  const app = buildApp(store, loop);
+  handles.rescueLoop = startRescueLoop({
+    store,
+    settings,
+    log: (line) => process.stderr.write(`${line}\n`),
+  });
+
+  const app = buildApp(store, loop, { rescueLoop: handles.rescueLoop });
   servers.push(serve({ fetch: app.fetch, port: settings.workerPort, hostname: '127.0.0.1' }));
   process.stderr.write(
     `[colony worker] listening on http://127.0.0.1:${settings.workerPort} (pid ${process.pid})\n`,
