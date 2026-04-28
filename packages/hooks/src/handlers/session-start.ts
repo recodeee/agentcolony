@@ -8,6 +8,7 @@ import {
   detectRepoBranch,
 } from '@colony/core';
 import { spawnNodeScript } from '@colony/process';
+import { buildScopeCheckPreface } from '../preface-conflict-map.js';
 import type { HookInput } from '../types.js';
 
 export interface SuggestionPrefaceDeps {
@@ -91,8 +92,16 @@ export async function sessionStart(
   const suggestionPreface = await buildSuggestionPreface(store, input, deps);
   const proposalPreface = buildProposalPreface(store, input);
   const foragingPreface = buildForagingPreface(store, input);
+  const scopeCheckPreface = buildScopeCheckPreface(store, input);
 
-  return [priorPreface, taskPreface, suggestionPreface, proposalPreface, foragingPreface]
+  return [
+    priorPreface,
+    taskPreface,
+    suggestionPreface,
+    proposalPreface,
+    foragingPreface,
+    scopeCheckPreface,
+  ]
     .filter(Boolean)
     .join('\n\n');
 }
