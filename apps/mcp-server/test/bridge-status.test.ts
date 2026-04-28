@@ -17,9 +17,28 @@ interface BridgeStatusResult {
   schema: 'colony.omx_hud_status.v1';
   generated_at: string;
   runtime_source: 'omx' | 'colony';
+  hivemind: {
+    lane_count: number;
+    total_lane_count: number;
+    lanes_truncated: boolean;
+    needs_attention_count: number;
+    counts: Record<string, number>;
+    lane_preview: Array<{
+      branch: string;
+      task: string;
+      owner: string;
+      activity: string;
+      needs_attention: boolean;
+      risk: string;
+      source: string;
+      locked_file_count: number;
+      locked_file_preview: string[];
+    }>;
+  };
   branch: string | null;
   task: string | null;
   blocker: string | null;
+  next_action: string;
   next: string;
   evidence: {
     task_id: number | null;
@@ -36,6 +55,15 @@ interface BridgeStatusResult {
     pending_wake_count: number;
     stalled_lane_count: number;
   };
+  attention_counts: {
+    lane_needs_attention_count: number;
+    pending_handoff_count: number;
+    pending_wake_count: number;
+    unread_message_count: number;
+    stalled_lane_count: number;
+    recent_other_claim_count: number;
+    blocked: boolean;
+  };
   ready_work_count: number;
   ready_work_preview: Array<{
     title: string;
@@ -46,6 +74,14 @@ interface BridgeStatusResult {
     capability_hint: string | null;
     file_count: number;
     file_scope_preview: string[];
+  }>;
+  claimed_file_count: number;
+  claimed_file_preview: Array<{
+    task_id: number;
+    file_path: string;
+    by_session_id: string;
+    claimed_at: number;
+    yours: boolean;
   }>;
   claimed_files: Array<{
     task_id: number;
@@ -223,6 +259,25 @@ describe('bridge_status', () => {
 
     expect(payload.schema).toBe('colony.omx_hud_status.v1');
     expect(payload.runtime_source).toBe('omx');
+    expect(payload.hivemind).toMatchObject({
+      lane_count: 1,
+      total_lane_count: 1,
+      lanes_truncated: false,
+      needs_attention_count: 0,
+    });
+    expect(payload.hivemind.counts).toMatchObject({ working: 1 });
+    expect(payload.hivemind.lane_preview).toHaveLength(1);
+    expect(payload.hivemind.lane_preview[0]).toMatchObject({
+      branch,
+      task: 'Expose compact HUD coordination status',
+      owner: 'codex/codex',
+      activity: 'working',
+      needs_attention: false,
+      risk: 'none',
+      source: 'active-session',
+      locked_file_count: 1,
+      locked_file_preview: ['apps/mcp-server/src/tools/bridge.ts'],
+    });
     expect(payload.branch).toBe(branch);
     expect(payload.task).toBe('Bridge HUD implementation');
     expect(payload.blocker).toBe('blocking attention');
@@ -233,6 +288,14 @@ describe('bridge_status', () => {
       pending_handoff_count: 1,
       pending_wake_count: 0,
       stalled_lane_count: 0,
+    });
+    expect(payload.attention_counts).toMatchObject({
+      lane_needs_attention_count: 0,
+      pending_handoff_count: 1,
+      pending_wake_count: 0,
+      unread_message_count: 1,
+      stalled_lane_count: 0,
+      blocked: true,
     });
     expect(payload.evidence).toMatchObject({
       task_id: currentThread.task_id,
@@ -253,6 +316,14 @@ describe('bridge_status', () => {
       'apps/mcp-server/src/tools/bridge.ts',
       'apps/mcp-server/test/bridge.ts',
     ]);
+    expect(payload.claimed_file_count).toBe(1);
+    expect(payload.claimed_file_preview).toHaveLength(1);
+    expect(payload.claimed_file_preview[0]).toMatchObject({
+      task_id: currentThread.task_id,
+      file_path: 'apps/mcp-server/src/tools/bridge.ts',
+      by_session_id: 'agent-session',
+      yours: true,
+    });
     expect(payload.claimed_files).toHaveLength(1);
     expect(payload.claimed_files[0]).toMatchObject({
       task_id: currentThread.task_id,
@@ -269,11 +340,10 @@ describe('bridge_status', () => {
         'branch=agent/codex/bridge-hud; task=bridge status; blocker=none; next=run tests; evidence=bridge_status',
     });
     expect(typeof payload.latest_working_note?.ts).toBe('number');
-    expect(payload.next).toBe(
+    expect(payload.next_action).toBe(
       'Answer blocking task messages first; another agent is explicitly blocked on you.',
     );
-    expect(payload).not.toHaveProperty('hivemind');
-    expect(payload).not.toHaveProperty('next_action');
+    expect(payload.next).toBe(payload.next_action);
     expect(payload).not.toHaveProperty('ready_work');
     expect(payload).not.toHaveProperty('claims');
     expect(text).not.toContain('bridge blocking body should not appear in HUD');
