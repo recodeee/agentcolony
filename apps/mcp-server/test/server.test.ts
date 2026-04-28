@@ -104,7 +104,7 @@ describe('MCP server', () => {
       'timeline',
     ]);
     const taskPostDescription = byName.get('task_post')?.description ?? '';
-    expect(taskPostDescription).toMatch(/^Post a task-scoped question/);
+    expect(taskPostDescription).toMatch(/^Post shared task notes/);
     expect(taskPostDescription).toContain(
       'Use task_message for directed agent-to-agent coordination',
     );

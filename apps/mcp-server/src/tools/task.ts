@@ -120,7 +120,7 @@ export function register(server: McpServer, ctx: ToolContext): void {
   server.tool(
     'task_post',
     [
-      'Post a task-scoped question, answer, decision, blocker, note, or warning.',
+      'Post shared task notes, decisions, blockers, questions, answers, or warnings.',
       'Use task_message for directed agent-to-agent coordination.',
       'Use task_note_working for unknown task_id.',
       'Future-work notes return task_propose recommendation.',
