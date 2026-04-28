@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { defaultSettings } from '@colony/config';
 import { MemoryStore, TaskThread } from '@colony/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { autoClaimFileForSession } from '../src/auto-claim.js';
 import { autoClaimFromToolUse, extractTouchedFiles } from '../src/handlers/post-tool-use.js';
 import { buildConflictPreface } from '../src/handlers/user-prompt-submit.js';
 import { runHook } from '../src/runner.js';
@@ -62,6 +63,74 @@ describe('extractTouchedFiles', () => {
     expect(extractTouchedFiles('Edit', null)).toEqual([]);
     expect(extractTouchedFiles('Edit', {})).toEqual([]);
     expect(extractTouchedFiles('Edit', { file_path: '' })).toEqual([]);
+  });
+});
+
+describe('autoClaimFileForSession', () => {
+  it('creates a task_claim_file-style observation when one active task matches', () => {
+    const task_id = seedTwoSessionTask();
+
+    const result = autoClaimFileForSession({
+      store,
+      session_id: 'A',
+      repo_root: '/repo',
+      branch: 'feat/auto-claim',
+      file_path: 'src/viewer.tsx',
+    });
+
+    expect(result).toMatchObject({ ok: true, status: 'claimed', task_id });
+    expect(store.storage.getClaim(task_id, 'src/viewer.tsx')?.session_id).toBe('A');
+    const claims = store.storage.taskObservationsByKind(task_id, 'claim');
+    expect(claims).toHaveLength(1);
+    expect(metadataOf(claims[0])).toMatchObject({
+      kind: 'claim',
+      source: 'autoClaimFileForSession',
+      file_path: 'src/viewer.tsx',
+      resolved_by: 'autoClaimFileForSession',
+    });
+  });
+
+  it('returns AMBIGUOUS_ACTIVE_TASK when multiple active tasks match', () => {
+    store.startSession({ id: 'A', ide: 'codex', cwd: '/repo' });
+    for (const branch of ['feat/one', 'feat/two']) {
+      const thread = TaskThread.open(store, {
+        repo_root: '/repo',
+        branch,
+        session_id: 'A',
+      });
+      thread.join('A', 'codex');
+    }
+
+    const result = autoClaimFileForSession(store, {
+      session_id: 'A',
+      repo_root: '/repo',
+      file_path: 'src/viewer.tsx',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'AMBIGUOUS_ACTIVE_TASK',
+    });
+    if (result.ok) throw new Error('expected ambiguous active task');
+    expect(result.candidates).toHaveLength(2);
+  });
+
+  it('returns ACTIVE_TASK_NOT_FOUND when no active task matches', () => {
+    store.startSession({ id: 'A', ide: 'codex', cwd: '/repo' });
+
+    const result = autoClaimFileForSession(store, {
+      session_id: 'A',
+      repo_root: '/repo',
+      branch: 'feat/missing',
+      file_path: 'src/viewer.tsx',
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'ACTIVE_TASK_NOT_FOUND',
+      candidates: [],
+    });
+    expect(store.storage.findActiveTaskForSession('A')).toBeUndefined();
   });
 });
 
