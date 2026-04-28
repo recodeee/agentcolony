@@ -27,6 +27,8 @@
     "format": "biome format --write .",
     "clean": "pnpm -r exec rm -rf dist && rm -rf node_modules/.cache",
     "p": "pnpm run release",
+    "publish:cli": "bash scripts/publish-cli.sh",
+    "publish:cli:dry-run": "bash scripts/publish-cli.sh --dry-run",
     "release": "changeset publish"
   },
   "devDependencies": {

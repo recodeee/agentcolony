@@ -269,6 +269,17 @@ Publish-path changes should also run:
 bash scripts/e2e-publish.sh
 ```
 
+### Publishing the CLI
+
+Do not run `npm publish` from the repository root. The root package is the private monorepo wrapper. Publish the public CLI package through the root wrapper instead:
+
+```bash
+pnpm publish:cli:dry-run
+pnpm publish:cli
+```
+
+The wrapper builds the workspace, stages the root `README.md`, `LICENSE`, and `hooks-scripts/` into `apps/cli`, then runs `npm publish --access public` from the `@imdeadpool/colony-cli` package directory.
+
 ## Architecture Rules
 
 - Keep behavior local-first.
