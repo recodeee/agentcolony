@@ -31,6 +31,12 @@ interface HivemindContextResult {
     negative_warning_count: number;
     next_action: string;
     suggested_tools: string[];
+    attention_hint: string;
+    ready_work_hint: string;
+    unread_message_count: number;
+    pending_handoff_count: number;
+    blocking: boolean;
+    ready_work_count: number;
     attention_counts: { unread_message_count: number; blocked: boolean };
     state_tool_replacements: Record<string, string[]>;
   };
@@ -261,6 +267,13 @@ describe('coordination loop discovery', () => {
       'Call attention_inbox, then task_ready_for_agent before choosing work.',
     );
     expect(context.summary.suggested_tools).toEqual(['attention_inbox', 'task_ready_for_agent']);
+    expect(context.summary.attention_hint).toContain('attention_inbox');
+    expect(context.summary.ready_work_hint).toContain('task_ready_for_agent');
+    expect(context.summary.ready_work_hint).toContain('task_list only for browsing/debugging');
+    expect(context.summary.unread_message_count).toBe(0);
+    expect(context.summary.pending_handoff_count).toBe(0);
+    expect(context.summary.blocking).toBe(false);
+    expect(context.summary.ready_work_count).toBe(0);
     expect(context.summary.state_tool_replacements.state_write).toEqual([
       'task_note_working',
       'task_post',
@@ -295,6 +308,18 @@ describe('coordination loop discovery', () => {
       urgency: 'blocking',
       content: 'Claim the test subtask before editing.',
     });
+
+    const followupContext = await call<HivemindContextResult>('hivemind_context', {
+      repo_root: repoRoot,
+      session_id: 'agent-session',
+      agent: 'codex',
+      query: 'coordination loop',
+      limit: 5,
+    });
+    expect(followupContext.summary.ready_work_count).toBe(1);
+    expect(followupContext.summary.unread_message_count).toBe(1);
+    expect(followupContext.summary.pending_handoff_count).toBe(0);
+    expect(followupContext.summary.blocking).toBe(true);
 
     const inbox = await call<InboxResult>('attention_inbox', {
       session_id: 'agent-session',

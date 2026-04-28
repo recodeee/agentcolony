@@ -301,6 +301,12 @@ describe('MCP server', () => {
         memory_hit_count: number;
         next_action: string;
         suggested_tools: string[];
+        attention_hint: string;
+        ready_work_hint: string;
+        unread_message_count: number;
+        pending_handoff_count: number;
+        blocking: boolean;
+        ready_work_count: number;
       };
       lanes: Array<Record<string, unknown>>;
       memory_hits: Array<Record<string, unknown>>;
@@ -312,6 +318,13 @@ describe('MCP server', () => {
       'Call attention_inbox, then task_ready_for_agent before choosing work.',
     );
     expect(payload.summary.suggested_tools).toEqual(['attention_inbox', 'task_ready_for_agent']);
+    expect(payload.summary.attention_hint).toContain('attention_inbox');
+    expect(payload.summary.ready_work_hint).toContain('task_ready_for_agent');
+    expect(payload.summary.ready_work_hint).toContain('task_list only for browsing/debugging');
+    expect(payload.summary.unread_message_count).toBe(0);
+    expect(payload.summary.pending_handoff_count).toBe(0);
+    expect(payload.summary.blocking).toBe(false);
+    expect(payload.summary.ready_work_count).toBe(0);
     expect(payload.lanes[0]).toMatchObject({
       branch: 'agent/codex/context-task',
       owner: 'codex/codex',
@@ -506,7 +519,12 @@ describe('MCP server', () => {
         hydration: string;
         hydrate_with: string;
       };
-      summary: { next_action: string };
+      summary: {
+        next_action: string;
+        unread_message_count: number;
+        pending_handoff_count: number;
+        blocking: boolean;
+      };
     };
 
     expect(payload.attention.pending_handoffs).toBe(1);
@@ -521,6 +539,9 @@ describe('MCP server', () => {
     expect(payload.summary.next_action).toBe(
       'Call attention_inbox, then task_ready_for_agent before choosing work.',
     );
+    expect(payload.summary.pending_handoff_count).toBe(1);
+    expect(payload.summary.unread_message_count).toBe(1);
+    expect(payload.summary.blocking).toBe(true);
     expect(text).not.toContain('blocking body should require hydration');
     expect(text).not.toContain('other repo blocker must stay out');
   });
