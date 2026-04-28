@@ -81,7 +81,7 @@ describe('colony queen CLI', () => {
         -h, --help               display help for command
 
       Commands:
-        plan [options] <title>   Draft or publish a queen plan from the terminal
+        plan [options] [title]   Draft or publish a queen plan from the terminal
         list [options]           List queen-published plans with sub-task rollup
         status [options] <slug>  Show one queen plan and its sub-task claim state
         sweep [options]          List queen plans needing attention: stalled,
@@ -121,6 +121,68 @@ describe('colony queen CLI', () => {
       'test-goal/sub-1 | Verify infrastructure scope | infra_work | src/x.ts | sub-0',
     );
     expect(existsSync(join(repoRoot, 'openspec/changes/test-goal/CHANGE.md'))).toBe(false);
+  });
+
+  it('renders file-based dry-run JSON with wave order and blockers', async () => {
+    const planFile = join(repoRoot, 'queen-plan.json');
+    writeFileSync(
+      planFile,
+      JSON.stringify({
+        goal_title: 'Auth parallel rollout',
+        problem: 'Auth changes need safe manual launch order.',
+        acceptance_criteria: ['Agents can preview launch order'],
+        affected_files: [
+          'packages/storage/src/auth.ts',
+          'apps/api/src/auth.ts',
+          'apps/web/src/AuthPanel.tsx',
+          'apps/api/test/auth.test.ts',
+        ],
+        ordering_hint: 'wave',
+        waves: [
+          {
+            name: 'Foundation',
+            titles: ['Prepare storage scope'],
+            rationale: 'Storage contract first.',
+          },
+          {
+            name: 'Product',
+            titles: ['Implement API scope', 'Implement web scope'],
+            rationale: 'API and web can run together after storage.',
+          },
+        ],
+        finalizer: 'Add targeted tests',
+      }),
+      'utf8',
+    );
+
+    await createProgram().parseAsync(
+      ['node', 'test', 'queen', 'plan', '--file', planFile, '--dry-run', '--json'],
+      { from: 'node' },
+    );
+
+    const preview = JSON.parse(output);
+    expect(preview.dry_run).toBe(true);
+    expect(preview.plan.slug).toBe('auth-parallel-rollout');
+    expect(
+      preview.waves.map((wave: { parallel_subtasks: Array<{ ref: string }> }) =>
+        wave.parallel_subtasks.map((task) => task.ref),
+      ),
+    ).toEqual([['sub-0'], ['sub-1', 'sub-2'], ['sub-3']]);
+    expect(preview.depends_on_edges).toContainEqual({
+      from: 'sub-0',
+      to: 'sub-1',
+      reason: 'sub-0 must finish before sub-1 can start',
+    });
+    expect(preview.blocked_future_work.map((task: { ref: string }) => task.ref)).toEqual([
+      'sub-1',
+      'sub-2',
+      'sub-3',
+    ]);
+    expect(preview.finalizer_tasks.map((task: { ref: string }) => task.ref)).toEqual(['sub-3']);
+    expect(preview.rationale).toContain('Storage contract first.');
+    expect(existsSync(join(repoRoot, 'openspec/changes/auth-parallel-rollout/CHANGE.md'))).toBe(
+      false,
+    );
   });
 
   it('publishes queen plans and renders human-readable sub-tasks', async () => {

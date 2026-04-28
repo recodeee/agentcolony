@@ -1,11 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadSettings } from '@colony/config';
 import { type MemoryStore, type PlanInfo, type SubtaskInfo, listPlans } from '@colony/core';
 import {
+  type CapabilityHint,
   DEFAULT_STALLED_MINUTES,
   DEFAULT_UNCLAIMED_MINUTES,
+  type Goal,
   type QueenAttentionItem,
   type QueenPlan,
+  type QueenSubtask,
   type QueenSweepWaveSummary,
   planGoal,
   publishOrderedPlan,
@@ -19,11 +23,13 @@ const QUEEN_AGENT = 'queen';
 const QUEEN_SESSION_ID = 'colony-queen-cli';
 
 interface PlanOpts {
-  problem: string;
+  problem?: string;
   accept: string[];
+  file?: string;
   files?: string[];
   repoRoot?: string;
   dryRun?: boolean;
+  json?: boolean;
 }
 
 interface RepoOpts {
@@ -39,6 +45,54 @@ interface SweepOpts {
   json?: boolean;
 }
 
+interface ResolvedPlanDraft {
+  plan: QueenPlan;
+  repoRoot: string;
+  sourceRationales: string[];
+  finalizer?: string | undefined;
+}
+
+interface PlanPreviewSubtask {
+  index: number;
+  ref: string;
+  title: string;
+  capability_hint: CapabilityHint;
+  file_scope: string[];
+  depends_on: number[];
+  depends_on_refs: string[];
+  is_finalizer: boolean;
+}
+
+interface PlanPreviewWave {
+  index: number;
+  label: string;
+  blocked_by: number[];
+  blocked_by_refs: string[];
+  parallel_subtasks: PlanPreviewSubtask[];
+  rationale: string;
+}
+
+interface PlanPreview {
+  dry_run: true;
+  plan: {
+    slug: string;
+    title: string;
+    problem: string;
+    acceptance_criteria: string[];
+  };
+  waves: PlanPreviewWave[];
+  depends_on_edges: Array<{ from: string; to: string; reason: string }>;
+  blocked_future_work: Array<{
+    subtask_index: number;
+    ref: string;
+    title: string;
+    blocked_by: number[];
+    blocked_by_refs: string[];
+  }>;
+  finalizer_tasks: PlanPreviewSubtask[];
+  rationale: string[];
+}
+
 export function registerQueenCommand(program: Command): void {
   const group = program
     .command('queen')
@@ -47,28 +101,26 @@ export function registerQueenCommand(program: Command): void {
   group
     .command('plan')
     .description('Draft or publish a queen plan from the terminal')
-    .argument('<title>', 'Plan title')
-    .requiredOption('--problem <text>', 'Problem statement')
+    .argument('[title]', 'Plan title; omit when --file supplies one')
+    .option('--problem <text>', 'Problem statement')
     .option('--accept <text>', 'Acceptance criterion; repeatable', collect, [])
+    .option('--file <path>', 'Read a queen goal JSON file')
     .option('--files <path...>', 'Files in scope')
     .option('--repo-root <path>', 'Repo root (defaults to process.cwd())')
     .option('--dry-run', 'Preview drafted sub-tasks without publishing')
-    .action(async (title: string, opts: PlanOpts) => {
-      if (opts.accept.length === 0) {
-        throw new Error('queen plan needs at least one --accept value');
-      }
-
-      const repoRoot = resolve(opts.repoRoot ?? process.cwd());
-      const plan = planGoal({
-        title,
-        problem: opts.problem,
-        acceptance_criteria: opts.accept,
-        repo_root: repoRoot,
-        affected_files: opts.files ?? [],
-      });
+    .option('--json', 'Emit dry-run preview as JSON')
+    .action(async (title: string | undefined, opts: PlanOpts) => {
+      const draft = resolvePlanDraft(title, opts);
+      const { plan, repoRoot } = draft;
 
       if (opts.dryRun === true) {
+        const preview = buildPlanPreview(plan, draft);
+        if (opts.json === true) {
+          process.stdout.write(`${JSON.stringify(preview, null, 2)}\n`);
+          return;
+        }
         renderDraftTable(plan);
+        process.stdout.write(renderPlanPreview(preview));
         return;
       }
 
@@ -163,6 +215,121 @@ export function registerQueenCommand(program: Command): void {
 
 function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function resolvePlanDraft(titleArg: string | undefined, opts: PlanOpts): ResolvedPlanDraft {
+  const fileInput = opts.file ? readPlanFile(opts.file) : {};
+  const title = titleArg ?? fileString(fileInput, 'goal_title') ?? fileString(fileInput, 'title');
+  if (!title) throw new Error('queen plan needs a title or --file goal_title/title');
+
+  const problem =
+    opts.problem ?? fileString(fileInput, 'problem') ?? fileString(fileInput, 'description');
+  if (!problem) throw new Error('queen plan needs --problem or --file problem');
+
+  const acceptanceCriteria =
+    opts.accept.length > 0
+      ? opts.accept
+      : (fileStringArray(fileInput, 'acceptance_criteria') ??
+        fileStringArray(fileInput, 'acceptance') ??
+        fileStringArray(fileInput, 'accept') ??
+        []);
+  if (acceptanceCriteria.length === 0) {
+    throw new Error('queen plan needs at least one --accept value or --file acceptance_criteria');
+  }
+
+  const repoRoot = resolve(opts.repoRoot ?? fileString(fileInput, 'repo_root') ?? process.cwd());
+  const orderingHint = fileString(fileInput, 'ordering_hint');
+  if (orderingHint !== undefined && orderingHint !== 'wave') {
+    throw new Error(`unsupported queen ordering_hint: ${orderingHint}`);
+  }
+
+  const sourceWaves = fileWaves(fileInput);
+  const finalizer = fileString(fileInput, 'finalizer');
+  const affectedFiles =
+    opts.files ??
+    fileStringArray(fileInput, 'affected_files') ??
+    fileStringArray(fileInput, 'files') ??
+    [];
+  const goal: Goal = {
+    title,
+    problem,
+    acceptance_criteria: acceptanceCriteria,
+    repo_root: repoRoot,
+    affected_files: affectedFiles,
+    ...(orderingHint === 'wave' ? { ordering_hint: orderingHint } : {}),
+    ...(sourceWaves !== undefined ? { waves: sourceWaves } : {}),
+    ...(finalizer !== undefined ? { finalizer } : {}),
+  };
+
+  return {
+    plan: planGoal(goal),
+    repoRoot,
+    sourceRationales:
+      sourceWaves?.flatMap((wave) => (wave.rationale ? [wave.rationale] : [])) ?? [],
+    ...(finalizer !== undefined ? { finalizer } : {}),
+  };
+}
+
+function readPlanFile(filePath: string): Record<string, unknown> {
+  const raw = JSON.parse(readFileSync(resolve(filePath), 'utf8')) as unknown;
+  if (!isRecord(raw)) throw new Error(`queen plan file must contain a JSON object: ${filePath}`);
+  return raw;
+}
+
+function fileString(input: Record<string, unknown>, key: string): string | undefined {
+  const value = input[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function fileStringArray(input: Record<string, unknown>, key: string): string[] | undefined {
+  const value = input[key];
+  if (typeof value === 'string' && value.trim().length > 0) return [value.trim()];
+  if (!Array.isArray(value)) return undefined;
+  const values = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return values.length > 0 ? values : undefined;
+}
+
+function fileNumberArray(input: Record<string, unknown>, key: string): number[] | undefined {
+  const value = input[key];
+  if (!Array.isArray(value)) return undefined;
+  const values = value.filter((item): item is number => Number.isInteger(item) && item >= 0);
+  return values.length > 0 ? values : undefined;
+}
+
+function fileWaves(input: Record<string, unknown>): NonNullable<Goal['waves']> | undefined {
+  const raw = input.waves;
+  if (!Array.isArray(raw)) return undefined;
+  const waves = raw.filter(isRecord).map((wave) => ({
+    ...((fileString(wave, 'name') ?? fileString(wave, 'title') ?? fileString(wave, 'id'))
+      ? { name: fileString(wave, 'name') ?? fileString(wave, 'title') ?? fileString(wave, 'id') }
+      : {}),
+    ...(fileStringArray(wave, 'subtask_refs') !== undefined
+      ? { subtask_refs: fileStringArray(wave, 'subtask_refs') }
+      : {}),
+    ...(fileStringArray(wave, 'titles') !== undefined
+      ? { titles: fileStringArray(wave, 'titles') }
+      : {}),
+    ...(fileStringArray(wave, 'files') !== undefined
+      ? { files: fileStringArray(wave, 'files') }
+      : {}),
+    ...(fileStringArray(wave, 'affected_files') !== undefined
+      ? { affected_files: fileStringArray(wave, 'affected_files') }
+      : {}),
+    ...(fileNumberArray(wave, 'depends_on') !== undefined
+      ? { depends_on: fileNumberArray(wave, 'depends_on') }
+      : {}),
+    ...(fileString(wave, 'rationale') !== undefined
+      ? { rationale: fileString(wave, 'rationale') }
+      : {}),
+  }));
+  return waves.length > 0 ? waves : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function parseMinutes(raw: string | undefined, flag: string): number | undefined | null {
@@ -309,6 +476,160 @@ function renderDraftTable(plan: QueenPlan): void {
   process.stdout.write(`${rows.map((row) => row.join(' | ')).join('\n')}\n`);
 }
 
+function buildPlanPreview(plan: QueenPlan, draft: ResolvedPlanDraft): PlanPreview {
+  const waves = computePlanWaves(plan);
+  const subtaskPreviews = plan.subtasks.map((subtask, index) =>
+    previewSubtask(subtask, index, draft.finalizer),
+  );
+  const dependsOnEdges = plan.subtasks.flatMap((subtask, index) =>
+    subtask.depends_on.map((dep) => ({
+      from: subtaskRef(dep),
+      to: subtaskRef(index),
+      reason: `${subtaskRef(dep)} must finish before ${subtaskRef(index)} can start`,
+    })),
+  );
+  const previewWaves = waves.map((wave, index) => {
+    const blockedBy = uniqueSorted(
+      wave.flatMap((subtaskIndex) => plan.subtasks[subtaskIndex]?.depends_on ?? []),
+    );
+    return {
+      index,
+      label: `Wave ${index + 1}`,
+      blocked_by: blockedBy,
+      blocked_by_refs: blockedBy.map(subtaskRef),
+      parallel_subtasks: wave
+        .map((subtaskIndex) => subtaskPreviews[subtaskIndex])
+        .filter(isDefined),
+      rationale: waveRationale(index, blockedBy, draft.sourceRationales[index]),
+    };
+  });
+  const firstWave = new Set(waves[0] ?? []);
+  const blockedFutureWork = subtaskPreviews
+    .filter((subtask) => !firstWave.has(subtask.index))
+    .map((subtask) => ({
+      subtask_index: subtask.index,
+      ref: subtask.ref,
+      title: subtask.title,
+      blocked_by: subtask.depends_on,
+      blocked_by_refs: subtask.depends_on_refs,
+    }));
+  const finalizerTasks = subtaskPreviews.filter((subtask) => subtask.is_finalizer);
+
+  return {
+    dry_run: true,
+    plan: {
+      slug: plan.slug,
+      title: plan.title,
+      problem: plan.problem,
+      acceptance_criteria: plan.acceptance_criteria,
+    },
+    waves: previewWaves,
+    depends_on_edges: dependsOnEdges,
+    blocked_future_work: blockedFutureWork,
+    finalizer_tasks: finalizerTasks,
+    rationale: [
+      'Wave 1 contains all currently claimable sub-tasks.',
+      'Later waves are grouped by depends_on edges; sub-tasks in the same wave can be launched in parallel after blockers complete.',
+      ...draft.sourceRationales,
+    ],
+  };
+}
+
+function computePlanWaves(plan: QueenPlan): number[][] {
+  const pending = new Set(plan.subtasks.map((_, index) => index));
+  const completed = new Set<number>();
+  const waves: number[][] = [];
+
+  while (pending.size > 0) {
+    const ready = [...pending]
+      .filter((index) =>
+        (plan.subtasks[index]?.depends_on ?? []).every((dep) => completed.has(dep)),
+      )
+      .sort((a, b) => a - b);
+    const wave = ready.length > 0 ? ready : [...pending].sort((a, b) => a - b);
+    waves.push(wave);
+    for (const index of wave) {
+      pending.delete(index);
+      completed.add(index);
+    }
+  }
+
+  return waves;
+}
+
+function previewSubtask(
+  subtask: QueenSubtask,
+  index: number,
+  explicitFinalizer: string | undefined,
+): PlanPreviewSubtask {
+  return {
+    index,
+    ref: subtaskRef(index),
+    title: subtask.title,
+    capability_hint: subtask.capability_hint,
+    file_scope: [...subtask.file_scope],
+    depends_on: [...subtask.depends_on],
+    depends_on_refs: subtask.depends_on.map(subtaskRef),
+    is_finalizer: isFinalizerSubtask(subtask, explicitFinalizer),
+  };
+}
+
+function isFinalizerSubtask(subtask: QueenSubtask, explicitFinalizer: string | undefined): boolean {
+  if (explicitFinalizer && normalizeLabel(subtask.title) === normalizeLabel(explicitFinalizer)) {
+    return true;
+  }
+  return /\b(final|finalize|finalizer|verify|verification|qa|release)\b/i.test(subtask.title);
+}
+
+function waveRationale(
+  index: number,
+  blockedBy: number[],
+  sourceRationale: string | undefined,
+): string {
+  if (sourceRationale) return sourceRationale;
+  if (index === 0) return 'No depends_on blockers; launch these sub-tasks in parallel first.';
+  return `Blocked until ${formatDepends(blockedBy)} completes.`;
+}
+
+function renderPlanPreview(preview: PlanPreview): string {
+  const lines = ['', kleur.bold('waves:')];
+  for (const wave of preview.waves) {
+    lines.push(`  ${wave.label}: ${wave.parallel_subtasks.map((task) => task.ref).join(', ')}`);
+    lines.push(`    parallel: ${wave.parallel_subtasks.map((task) => task.title).join(' / ')}`);
+    lines.push(
+      `    blocked-by: ${wave.blocked_by_refs.length > 0 ? wave.blocked_by_refs.join(', ') : '-'}`,
+    );
+    lines.push(`    rationale: ${wave.rationale}`);
+  }
+
+  lines.push('', kleur.bold('depends_on edges:'));
+  if (preview.depends_on_edges.length === 0) {
+    lines.push('  -');
+  } else {
+    for (const edge of preview.depends_on_edges) lines.push(`  ${edge.from} -> ${edge.to}`);
+  }
+
+  lines.push('', kleur.bold('blocked future work:'));
+  if (preview.blocked_future_work.length === 0) {
+    lines.push('  -');
+  } else {
+    for (const task of preview.blocked_future_work) {
+      lines.push(`  ${task.ref} ${task.title} blocked by ${task.blocked_by_refs.join(', ')}`);
+    }
+  }
+
+  lines.push('', kleur.bold('finalizer tasks:'));
+  if (preview.finalizer_tasks.length === 0) {
+    lines.push('  -');
+  } else {
+    for (const task of preview.finalizer_tasks) lines.push(`  ${task.ref} ${task.title}`);
+  }
+
+  lines.push('', kleur.bold('rationale:'));
+  for (const reason of preview.rationale) lines.push(`  - ${reason}`);
+  return `${lines.join('\n')}\n`;
+}
+
 function renderPublishedSubtasks(
   plan: QueenPlan,
   published: Array<{ subtask_index: number; branch: string; task_id: number; title: string }>,
@@ -370,6 +691,22 @@ function formatFiles(files: string[]): string {
 
 function formatDepends(dependsOn: number[] | undefined): string {
   return dependsOn?.length ? dependsOn.map((dep) => `sub-${dep}`).join(', ') : '-';
+}
+
+function subtaskRef(index: number): string {
+  return `sub-${index}`;
+}
+
+function uniqueSorted(values: number[]): number[] {
+  return [...new Set(values)].sort((a, b) => a - b);
+}
+
+function normalizeLabel(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+  return value !== undefined;
 }
 
 function plural(count: number, singular: string): string {
