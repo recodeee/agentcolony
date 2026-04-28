@@ -6,9 +6,22 @@ const { describe, it } = require('node:test');
 const repoRoot = resolve(__dirname, '..');
 const agentsPath = resolve(repoRoot, 'AGENTS.md');
 const claudePath = resolve(repoRoot, 'CLAUDE.md');
+const docsMcpPath = resolve(repoRoot, 'docs/mcp.md');
 
 const AGENTS_TEXT = readFileSync(agentsPath, 'utf8');
 const AGENTS_NORMALIZED = AGENTS_TEXT.replace(/\s+/g, ' ').toLowerCase();
+const DOCS_MCP_TEXT = readFileSync(docsMcpPath, 'utf8');
+const DOCS_MCP_NORMALIZED = DOCS_MCP_TEXT.replace(/\s+/g, ' ').toLowerCase();
+
+function assertContainsInOrder(text, requiredTerms, label) {
+  let previousIndex = -1;
+  for (const term of requiredTerms) {
+    const index = text.indexOf(term);
+    assert.notEqual(index, -1, `${label} must mention ${term}`);
+    assert.ok(index > previousIndex, `${label} must keep ${term} after the previous startup step`);
+    previousIndex = index;
+  }
+}
 
 const CLAUDE_POINTER = [
   '# CLAUDE.md',
@@ -20,13 +33,15 @@ const CLAUDE_POINTER = [
 
 describe('agent instruction contract', () => {
   it('keeps AGENTS.md Colony-first instead of OMX-first', () => {
-    for (const required of [
-      'mcp__colony__hivemind_context',
-      'mcp__colony__attention_inbox',
-      'mcp__colony__task_ready_for_agent',
-    ]) {
-      assert.ok(AGENTS_TEXT.includes(required), `AGENTS.md must mention ${required}`);
-    }
+    assertContainsInOrder(
+      AGENTS_TEXT,
+      [
+        'mcp__colony__hivemind_context',
+        'mcp__colony__attention_inbox',
+        'mcp__colony__task_ready_for_agent',
+      ],
+      'AGENTS.md',
+    );
 
     assert.match(
       AGENTS_TEXT,
@@ -53,6 +68,38 @@ describe('agent instruction contract', () => {
       /do not embed stale memory dumps/,
       'AGENTS.md must forbid stale memory dumps',
     );
+  });
+
+  it('keeps docs/mcp.md aligned with the Colony startup loop', () => {
+    assertContainsInOrder(
+      DOCS_MCP_TEXT,
+      [
+        'mcp__colony__hivemind_context',
+        'mcp__colony__attention_inbox',
+        'mcp__colony__task_ready_for_agent',
+      ],
+      'docs/mcp.md',
+    );
+    assertContainsInOrder(
+      DOCS_MCP_TEXT,
+      ['`hivemind_context`', '`attention_inbox`', '`task_ready_for_agent`'],
+      'docs/mcp.md',
+    );
+
+    for (const required of [
+      /Use `task_list` for browsing\/debugging recent task threads/i,
+      /Use `task_ready_for_agent` for choosing what to work on next/i,
+      /Claim files with `task_claim_file` .* before editing/i,
+    ]) {
+      assert.match(DOCS_MCP_TEXT, required);
+    }
+
+    for (const required of [
+      /use colony first for coordination/,
+      /use omx state or notepad only when colony is unavailable or missing the required surface/,
+    ]) {
+      assert.match(DOCS_MCP_NORMALIZED, required);
+    }
   });
 
   it('keeps CLAUDE.md pointed at AGENTS.md', () => {
