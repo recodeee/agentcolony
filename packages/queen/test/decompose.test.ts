@@ -7,6 +7,7 @@ import {
   planGoal,
   slugFromTitle,
 } from '../src/decompose.js';
+import { colonyImprovementWaveFixture } from './fixtures/colony-improvement-waves.js';
 
 interface Overlap {
   a: number;
@@ -342,6 +343,43 @@ describe('orderedPlanFromWaves', () => {
     ]);
     expect(plan.subtasks.at(-1)?.title).toBe('Agent 1 task');
     expect(plan.subtasks.at(-1)?.depends_on).toEqual([5, 6, 7, 8]);
+  });
+
+  it('represents the exact Colony improvement plan as ordered Queen waves', () => {
+    const plan = colonyImprovementWaveFixture;
+
+    expect(plan.title).toBe('Colony improvement plan');
+    expect(plan.execution_strategy).toMatchObject({
+      mode: 'ordered_waves',
+      claim_model: 'agent_pull',
+      scheduler: 'none',
+      wave_dependency: 'previous_wave',
+    });
+    expect(plan.waves.map((wave) => [wave.id, wave.subtask_indexes])).toEqual([
+      ['wave-1', [0, 1, 2, 3, 4]],
+      ['wave-2', [5, 6, 7, 8]],
+      ['wave-3', [9]],
+    ]);
+    expect(plan.subtasks.map((subtask) => subtask.title)).toEqual([
+      'Improve attention_inbox ToolSearch ranking',
+      'Improve task_ready_for_agent adoption',
+      'Add search-before-implementation guidance',
+      'Improve claim-before-edit workflow',
+      'Add coordination-loop tests',
+      'Absorb OMX notepad usage',
+      'Add Colony usage/adoption dashboard',
+      'Improve task_message and attention_inbox loop',
+      'Reduce overlap with OMX state tools',
+      'Merge docs story and canonical startup loop',
+    ]);
+    expect(plan.subtasks.slice(5, 9).map((subtask) => subtask.depends_on)).toEqual([
+      [0, 1, 2, 3, 4],
+      [0, 1, 2, 3, 4],
+      [0, 1, 2, 3, 4],
+      [0, 1, 2, 3, 4],
+    ]);
+    expect(plan.subtasks.at(-1)?.depends_on).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(pairwiseScopeOverlap(plan)).toEqual([]);
   });
 });
 
