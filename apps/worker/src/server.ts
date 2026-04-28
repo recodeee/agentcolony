@@ -10,7 +10,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { type CaffeinateHandle, startCaffeinate } from './caffeinate.js';
 import { type EmbedLoopHandle, startEmbedLoop, stateFilePath } from './embed-loop.js';
-import { renderIndex, renderSession } from './viewer.js';
+import { type StrandedSessionSummary, renderIndex, renderSession } from './viewer.js';
 
 const HIVEMIND_CACHE_TTL_MS = 500;
 
@@ -181,7 +181,14 @@ export function buildApp(
   });
 
   app.get('/', (c) =>
-    c.html(renderIndex(store.storage.listSessions(50), readCachedHivemind(), store.storage)),
+    c.html(
+      renderIndex(
+        store.storage.listSessions(50),
+        readCachedHivemind(),
+        store.storage,
+        readStrandedSessionsForPlansPage(store),
+      ),
+    ),
   );
   app.get('/sessions/:id', (c) => {
     const id = c.req.param('id');
@@ -197,6 +204,75 @@ export function buildApp(
   });
 
   return app;
+}
+
+type StrandedStorageReader = {
+  findStrandedSessions?: () => StrandedStorageRow[];
+  getTask: MemoryStore['storage']['getTask'];
+};
+
+interface StrandedStorageRow {
+  session_id: string;
+  ide?: string;
+  agent_name?: string;
+  cwd?: string | null;
+  branch?: string;
+  repo_root?: string;
+  last_observation_ts?: number;
+  last_activity_ts?: number;
+  held_claims_json?: string;
+  held_claims?: HeldClaimSummary[];
+  last_tool_error?: string | null;
+}
+
+interface HeldClaimSummary {
+  task_id?: number;
+  file_path: string;
+  claimed_at?: number;
+}
+
+function readStrandedSessionsForPlansPage(store: MemoryStore): StrandedSessionSummary[] {
+  const storage = store.storage as unknown as StrandedStorageReader;
+  if (typeof storage.findStrandedSessions !== 'function') return [];
+  return storage.findStrandedSessions().map((row) => {
+    const heldClaims: HeldClaimSummary[] = Array.isArray(row.held_claims)
+      ? row.held_claims.filter(isHeldClaimSummary)
+      : parseHeldClaims(row.held_claims_json);
+    const firstTask = heldClaims
+      .map((claim) =>
+        typeof claim.task_id === 'number' && Number.isFinite(claim.task_id)
+          ? storage.getTask(claim.task_id)
+          : undefined,
+      )
+      .find((task) => task !== undefined);
+    return {
+      session_id: row.session_id,
+      agent_name: row.agent_name ?? row.ide ?? 'unknown',
+      branch: row.branch ?? firstTask?.branch ?? 'unknown branch',
+      repo_root: row.repo_root ?? firstTask?.repo_root ?? row.cwd ?? 'unknown repo',
+      last_activity_ts: row.last_activity_ts ?? row.last_observation_ts ?? Date.now(),
+      held_claims: heldClaims.map((claim) => ({ file_path: claim.file_path })),
+      last_tool_error: row.last_tool_error ?? null,
+    };
+  });
+}
+
+function parseHeldClaims(raw: string | undefined): HeldClaimSummary[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(isHeldClaimSummary) : [];
+  } catch {
+    return [];
+  }
+}
+
+function isHeldClaimSummary(value: unknown): value is HeldClaimSummary {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as HeldClaimSummary).file_path === 'string'
+  );
 }
 
 function safeJsonObject(raw: string | null): Record<string, unknown> {
