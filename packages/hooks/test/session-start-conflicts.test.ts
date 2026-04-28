@@ -6,15 +6,11 @@ import { MemoryStore, TaskThread } from '@colony/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type SuggestionPrefaceDeps, sessionStart } from '../src/handlers/session-start.js';
 
-interface ClaimRow {
-  file_path: string;
-  session_id: string;
-  claimed_at: number;
-}
-
 let dir: string;
 let repo: string;
 let store: MemoryStore;
+let claimCounter = 0;
+const now = new Date('2026-04-28T10:00:00Z');
 
 const noSuggestions: SuggestionPrefaceDeps = {
   resolveEmbedder: async () => null,
@@ -84,26 +80,25 @@ function seedAvailablePlan(planSlug: string, capability_hint: string): void {
   });
 }
 
-function installClaimsForPaths(rows: ClaimRow[] | Error): void {
-  (
-    store.storage as unknown as {
-      claimsForPaths?: (paths: string[]) => ClaimRow[];
-    }
-  ).claimsForPaths =
-    rows instanceof Error
-      ? () => {
-          throw rows;
-        }
-      : (paths: string[]) => rows.filter((row) => paths.includes(row.file_path));
-}
-
 function startHolder(session_id: string, ide: string): void {
   store.startSession({ id: session_id, ide, cwd: repo });
 }
 
+function holdFile(file_path: string, session_id: string, ageMinutes: number): void {
+  vi.setSystemTime(now.getTime() - ageMinutes * 60_000);
+  const thread = TaskThread.open(store, {
+    repo_root: repo,
+    branch: `held/${claimCounter++}`,
+    session_id,
+  });
+  thread.claimFile({ session_id, file_path });
+  vi.setSystemTime(now);
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date('2026-04-28T10:00:00Z'));
+  vi.setSystemTime(now);
+  claimCounter = 0;
   dir = mkdtempSync(join(tmpdir(), 'colony-session-start-conflicts-'));
   repo = join(dir, 'repo');
   mkdirSync(repo, { recursive: true });
@@ -133,7 +128,6 @@ describe('SessionStart scope conflict map', () => {
     expect(empty).not.toContain('Scope check');
 
     seedPlanSubtask('spec/current/sub-0', ['apps/api/src/auth.ts']);
-    installClaimsForPaths([]);
     const clean = await sessionStart(
       store,
       { session_id: 'me', ide: 'codex', cwd: repo },
@@ -151,23 +145,9 @@ describe('SessionStart scope conflict map', () => {
     seedPlanSubtask('spec/current/sub-0', fileScope);
     startHolder('codex@019dbc-old', 'codex');
     startHolder('claude@7a67fd-new', 'claude-code');
-    installClaimsForPaths([
-      {
-        file_path: 'apps/api/src/middleware.ts',
-        session_id: 'claude@7a67fd-new',
-        claimed_at: Date.now() - 3 * 60_000,
-      },
-      {
-        file_path: 'apps/api/src/auth.ts',
-        session_id: 'codex@019dbc-old',
-        claimed_at: Date.now() - 14 * 60_000,
-      },
-      {
-        file_path: 'packages/storage/src/index.ts',
-        session_id: 'codex@019dbc-old',
-        claimed_at: Date.now() - 9 * 60_000,
-      },
-    ]);
+    holdFile('apps/api/src/middleware.ts', 'claude@7a67fd-new', 3);
+    holdFile('apps/api/src/auth.ts', 'codex@019dbc-old', 14);
+    holdFile('packages/storage/src/index.ts', 'codex@019dbc-old', 9);
 
     const preface = await sessionStart(
       store,
@@ -185,12 +165,8 @@ describe('SessionStart scope conflict map', () => {
     const fileScope = Array.from({ length: 7 }, (_, i) => `apps/api/src/file-${i}.ts`);
     seedPlanSubtask('spec/current/sub-0', fileScope);
     startHolder('codex@019dbc-overlap', 'codex');
-    installClaimsForPaths(
-      fileScope.map((file_path, index) => ({
-        file_path,
-        session_id: 'codex@019dbc-overlap',
-        claimed_at: Date.now() - (70 - index) * 60_000,
-      })),
+    fileScope.forEach((file_path, index) =>
+      holdFile(file_path, 'codex@019dbc-overlap', 70 - index),
     );
 
     const preface = await sessionStart(
@@ -210,13 +186,7 @@ describe('SessionStart scope conflict map', () => {
   it('adds a suggestion when a matching capability sub-task exists', async () => {
     seedPlanSubtask('spec/current/sub-0', ['apps/api/src/auth.ts']);
     startHolder('claude@7a67fd-auth', 'claude-code');
-    installClaimsForPaths([
-      {
-        file_path: 'apps/api/src/auth.ts',
-        session_id: 'claude@7a67fd-auth',
-        claimed_at: Date.now() - 10 * 60_000,
-      },
-    ]);
+    holdFile('apps/api/src/auth.ts', 'claude@7a67fd-auth', 10);
     store.storage.upsertAgentProfile({
       agent: 'codex',
       capabilities: JSON.stringify({
@@ -243,13 +213,7 @@ describe('SessionStart scope conflict map', () => {
   it('omits the suggestion line when no matching sub-task exists', async () => {
     seedPlanSubtask('spec/current/sub-0', ['apps/api/src/auth.ts']);
     startHolder('claude@7a67fd-auth', 'claude-code');
-    installClaimsForPaths([
-      {
-        file_path: 'apps/api/src/auth.ts',
-        session_id: 'claude@7a67fd-auth',
-        claimed_at: Date.now() - 10 * 60_000,
-      },
-    ]);
+    holdFile('apps/api/src/auth.ts', 'claude@7a67fd-auth', 10);
     store.storage.upsertAgentProfile({
       agent: 'codex',
       capabilities: JSON.stringify({
@@ -274,7 +238,9 @@ describe('SessionStart scope conflict map', () => {
 
   it('keeps SessionStart normal when claims data is unavailable', async () => {
     seedPlanSubtask('spec/current/sub-0', ['apps/api/src/auth.ts']);
-    installClaimsForPaths(new Error('claims helper unavailable'));
+    vi.spyOn(store.storage, 'listTasks').mockImplementation(() => {
+      throw new Error('claims helper unavailable');
+    });
 
     const preface = await sessionStart(
       store,
