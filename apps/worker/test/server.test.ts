@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { defaultSettings } from '@colony/config';
 import { MemoryStore, TaskThread } from '@colony/core';
 import type { Hono } from 'hono';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildApp } from '../src/server.js';
 
 let dir: string;
@@ -79,6 +79,48 @@ function seedFileLocks(repoRoot: string): void {
   );
 }
 
+function seedStrandedSession(): { sessionId: string; lastError: string } {
+  const now = Date.UTC(2026, 3, 28, 12, 0, 0);
+  vi.setSystemTime(now);
+  const sessionId = 'codex-stranded-session-abcdef';
+  const lastActivity = now - 12 * 60_000;
+  store.storage.createSession({
+    id: sessionId,
+    ide: 'codex',
+    cwd: '/repo/colony',
+    started_at: lastActivity - 1_000,
+    metadata: null,
+  });
+  const task = store.storage.findOrCreateTask({
+    title: 'plans stranded rescue surface',
+    repo_root: '/repo/colony',
+    branch: 'agent/codex/plans-stranded',
+    created_by: sessionId,
+  });
+  store.storage.addTaskParticipant({ task_id: task.id, session_id: sessionId, agent: 'codex' });
+  for (const filePath of [
+    'apps/worker/src/viewer.ts',
+    'apps/worker/src/server.ts',
+    'apps/worker/test/server.test.ts',
+    'packages/core/src/rescue.ts',
+  ]) {
+    store.storage.claimFile({ task_id: task.id, file_path: filePath, session_id: sessionId });
+  }
+  const lastError =
+    'Error: permission denied while calling rescue_stranded_run for stranded session; extra diagnostic text after eighty characters';
+  store.storage.insertObservation({
+    session_id: sessionId,
+    kind: 'tool_use',
+    content: 'rescue failed',
+    compressed: false,
+    intensity: null,
+    metadata: { error: lastError },
+    task_id: task.id,
+    ts: lastActivity,
+  });
+  return { sessionId, lastError };
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'colony-worker-'));
   store = new MemoryStore({ dbPath: join(dir, 'data.db'), settings: defaultSettings });
@@ -86,6 +128,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   store.close();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -225,6 +268,55 @@ describe('worker HTTP', () => {
     expect(res.headers.get('content-type') ?? '').toMatch(/text\/html/);
     const body = await res.text();
     expect(body).toContain('s1');
+  });
+
+  it('GET / omits stranded sessions when the stranded list is empty', async () => {
+    const res = await app.request('/');
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    expect(body).not.toContain('Stranded sessions');
+    expect(body).not.toContain('data-stranded="true"');
+  });
+
+  it('GET / renders stranded sessions as the top rescue lane', async () => {
+    const { sessionId, lastError } = seedStrandedSession();
+
+    const res = await app.request('/');
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    const strandedStart = body.indexOf('<section class="stranded-section"');
+    const strandedSection = body.slice(strandedStart, body.indexOf('</section>', strandedStart));
+
+    expect(body.indexOf('Stranded sessions')).toBeLessThan(body.indexOf('Hivemind runtime'));
+    expect(body).toContain('data-stranded="true"');
+    expect(body).toContain(`data-session-id="${sessionId}"`);
+    expect(body).toContain('codex-strand...');
+    expect(body).toContain('stranded · rescue available');
+    expect(body).toContain('agent/codex/plans-stranded');
+    expect(body).toContain('/repo/colony');
+    expect(body).toContain('12 minutes ago');
+    expect(body).toContain('4 held claims');
+    expect(body).toContain('+1 more');
+    expect(strandedSection).toContain('apps/worker/src/viewer.ts');
+    expect(strandedSection).toContain('apps/worker/src/server.ts');
+    expect(strandedSection).toContain('apps/worker/test/server.test.ts');
+    expect(strandedSection).not.toContain('packages/core/src/rescue.ts');
+    expect(body).toContain(lastError.slice(0, 77));
+    expect(body).not.toContain(lastError);
+  });
+
+  it('GET / renders rescue action that posts the stranded session id', async () => {
+    const { sessionId } = seedStrandedSession();
+
+    const res = await app.request('/');
+    expect(res.status).toBe(200);
+    const body = await res.text();
+
+    expect(body).toContain(`method="post"`);
+    expect(body).toContain(`action="/api/colony/stranded/${encodeURIComponent(sessionId)}/rescue"`);
+    expect(body).toContain(`data-action="rescue-stranded"`);
+    expect(body).toContain(`data-session-id="${sessionId}"`);
+    expect(body).toContain(`fetch(form.action, { method: 'POST'`);
   });
 
   it('GET / renders the Hivemind runtime dashboard', async () => {

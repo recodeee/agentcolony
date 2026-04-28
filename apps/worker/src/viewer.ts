@@ -39,6 +39,17 @@ const style = `
   .claim-tile code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; padding: 0; }
   .attention-item { border-top: 1px solid #222; padding-top: 8px; margin-top: 8px; }
   .attention-item:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+  .stranded-section { margin-bottom: 18px; }
+  .stranded-title { color: #fecaca; }
+  .stranded-card { border-left: 4px solid #ef4444; background: #1b1113; border-color: #452025; }
+  .stranded-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+  .stranded-pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #5f1d25; color: #fecaca; font-size: 11px; font-weight: 600; }
+  .stranded-error { display: block; margin-top: 8px; color: #ffd5d5; background: #250f12; border: 1px solid #5f1d25; padding: 6px 8px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  .stranded-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .stranded-actions button, .stranded-actions a { border: 1px solid #6d2630; border-radius: 6px; padding: 5px 9px; color: #f8fafc; background: #3f151b; font: inherit; cursor: pointer; }
+  .stranded-actions a { display: inline-block; }
+  .stranded-actions button:hover, .stranded-actions a:hover { background: #5f1d25; text-decoration: none; }
+  .stranded-actions button:disabled { opacity: 0.65; cursor: wait; }
   @media (max-width: 860px) { .viewer-grid { grid-template-columns: 1fr; } .attention { position: static; } }
 `;
 
@@ -96,17 +107,29 @@ function ownerChip(ide: string, derived: boolean): string {
   return html`<span class="owner" data-owner="${ide}" data-derived="${String(derived)}">${label}</span>`;
 }
 
+export interface StrandedSessionSummary {
+  session_id: string;
+  agent_name: string;
+  branch: string;
+  repo_root: string;
+  last_activity_ts: number;
+  held_claims: Array<{ file_path: string }>;
+  last_tool_error: string | null;
+}
+
 export function renderIndex(
   sessions: SessionRow[],
   snapshot: HivemindSnapshot | undefined,
   storage: Storage,
+  strandedSessions: StrandedSessionSummary[] = [],
 ): string {
+  const stranded = renderStrandedSessions(strandedSessions);
   const dashboard = snapshot ? renderHivemindDashboard(snapshot) : '';
   const colonyState = renderColonyState(storage);
   if (sessions.length === 0) {
     return layout(
       'agents-hivemind',
-      html`${raw(dashboard)}${raw(colonyState)}<p>No memory sessions yet.</p>`,
+      html`${raw(stranded)}${raw(dashboard)}${raw(colonyState)}<p>No memory sessions yet.</p>`,
     );
   }
   const ownerCounts = new Map<string, number>();
@@ -128,8 +151,53 @@ export function renderIndex(
     .join(' ');
   return layout(
     'agents-hivemind · sessions',
-    html`${raw(dashboard)}${raw(colonyState)}<h2>Recent memory sessions</h2><p class="meta">${raw(summary)}</p>${raw(items)}`,
+    html`${raw(stranded)}${raw(dashboard)}${raw(colonyState)}<h2>Recent memory sessions</h2><p class="meta">${raw(summary)}</p>${raw(items)}`,
   );
+}
+
+function renderStrandedSessions(sessions: StrandedSessionSummary[]): string {
+  if (sessions.length === 0) return '';
+  const cards = sessions.map((session) => {
+    const visibleClaims = session.held_claims.slice(0, 3);
+    const hiddenClaimCount = Math.max(0, session.held_claims.length - visibleClaims.length);
+    const claimRows =
+      visibleClaims.length > 0
+        ? html`<ul class="path-list">${raw(
+            visibleClaims.map((claim) => html`<li><code>${claim.file_path}</code></li>`).join(''),
+          )}</ul>`
+        : '<p class="meta">No held claims reported.</p>';
+    const morePill =
+      hiddenClaimCount > 0 ? html`<span class="badge">+${hiddenClaimCount} more</span>` : '';
+    const rescuePath = `/api/colony/stranded/${encodeURIComponent(session.session_id)}/rescue`;
+    return html`
+      <div class="card stranded-card" data-stranded="true" data-session-id="${session.session_id}">
+        <div class="stranded-head">
+          <div>
+            <strong title="${session.session_id}">${shortSessionId(session.session_id)}</strong>
+            <span class="meta"> · ${session.agent_name}</span>
+          </div>
+          <span class="stranded-pill">stranded · rescue available</span>
+        </div>
+        <div class="meta">${session.branch} · ${session.repo_root}</div>
+        <div class="meta">Last activity ${formatAgoLong(session.last_activity_ts)} · ${session.held_claims.length} held claims ${raw(morePill)}</div>
+        ${raw(claimRows)}
+        <code class="stranded-error">${truncateText(session.last_tool_error ?? 'No tool error recorded.', 80)}</code>
+        <div class="stranded-actions">
+          <form method="post" action="${rescuePath}" data-action="rescue-stranded" data-session-id="${session.session_id}">
+            <button type="submit">rescue this</button>
+          </form>
+          <a href="/sessions/${encodeURIComponent(session.session_id)}">view timeline</a>
+        </div>
+      </div>`;
+  });
+  return html`
+    <section class="stranded-section" aria-label="Stranded sessions">
+      <h2 class="stranded-title">Stranded sessions</h2>
+      ${raw(cards.join(''))}
+    </section>
+    <script>
+${raw(strandedRescueScript())}
+    </script>`;
 }
 
 function renderColonyState(storage: Storage): string {
@@ -313,12 +381,55 @@ function formatAgo(ts: number): string {
   return `${Math.round(ms / 3_600_000)}h ago`;
 }
 
+function formatAgoLong(ts: number): string {
+  const ms = Math.max(0, Date.now() - ts);
+  if (ms < 60_000) {
+    const seconds = Math.round(ms / 1000);
+    return `${seconds} ${seconds === 1 ? 'second' : 'seconds'} ago`;
+  }
+  if (ms < 3_600_000) {
+    const minutes = Math.round(ms / 60_000);
+    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
+  }
+  const hours = Math.round(ms / 3_600_000);
+  return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+}
+
+function shortSessionId(id: string): string {
+  return id.length <= 12 ? id : `${id.slice(0, 12)}...`;
+}
+
+function truncateText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) return value;
+  if (maxLength <= 3) return value.slice(0, maxLength);
+  return `${value.slice(0, maxLength - 3)}...`;
+}
+
 function claimHeatStyle(ts: number): string {
   const ratio = Math.max(0, Math.min(1, (Date.now() - ts) / RECENT_CLAIM_WINDOW_MS));
   const hue = Math.round(145 - ratio * 110);
   const light = Math.round(21 - ratio * 5);
   const borderLight = Math.round(47 - ratio * 14);
   return `background: hsl(${hue} 42% ${light}%); border-color: hsl(${hue} 58% ${borderLight}%);`;
+}
+
+function strandedRescueScript(): string {
+  return `
+(() => {
+  document.addEventListener('submit', async (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || form.dataset.action !== 'rescue-stranded') return;
+    event.preventDefault();
+    const button = form.querySelector('button');
+    if (button) button.disabled = true;
+    try {
+      await fetch(form.action, { method: 'POST', headers: { accept: 'application/json' } });
+    } finally {
+      if (button) button.disabled = false;
+    }
+  });
+})();
+`;
 }
 
 function attentionRefreshScript(taskIdJson: string): string {
