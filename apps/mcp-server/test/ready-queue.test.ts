@@ -34,13 +34,21 @@ async function call<T>(name: string, args: Record<string, unknown>): Promise<T> 
   return JSON.parse(text) as T;
 }
 
-function publishArgs(subtasks: Array<Record<string, unknown>>): Record<string, unknown> {
+function publishArgs(
+  subtasks: Array<Record<string, unknown>>,
+  overrides: Partial<{
+    slug: string;
+    session_id: string;
+    agent: string;
+    title: string;
+  }> = {},
+): Record<string, unknown> {
   return {
     repo_root: repoRoot,
-    slug: 'ready-plan',
-    session_id: 'planner',
-    agent: 'claude',
-    title: 'Ready plan',
+    slug: overrides.slug ?? 'ready-plan',
+    session_id: overrides.session_id ?? 'planner',
+    agent: overrides.agent ?? 'claude',
+    title: overrides.title ?? 'Ready plan',
     problem: 'Agents need ranked work.',
     acceptance_criteria: ['Ready queue ranks available work'],
     subtasks,
@@ -53,6 +61,7 @@ beforeEach(async () => {
   writeFileSync(join(repoRoot, 'SPEC.md'), '# SPEC\n', 'utf8');
   store = new MemoryStore({ dbPath: join(dataDir, 'data.db'), settings: defaultSettings });
   store.startSession({ id: 'planner', ide: 'claude-code', cwd: repoRoot });
+  store.startSession({ id: 'queen', ide: 'queen', cwd: repoRoot });
   store.startSession({ id: 'agent-session', ide: 'codex', cwd: repoRoot });
   store.startSession({ id: 'other-session', ide: 'claude-code', cwd: repoRoot });
   const server = buildServer(store, defaultSettings);
@@ -110,6 +119,106 @@ describe('task_ready_for_agent', () => {
 
     expect(result.ready.map((entry) => entry.title)).toEqual(['Build API', 'Build page']);
     expect(result.ready[0]?.fit_score).toBeGreaterThan(result.ready[1]?.fit_score ?? 0);
+  });
+
+  it('boosts queen-published plan sub-tasks ahead of equal manual plan sub-tasks', async () => {
+    await call('agent_upsert_profile', {
+      agent: 'codex',
+      capabilities: { api_work: 0.9 },
+    });
+    await call('task_plan_publish', {
+      ...publishArgs(
+        [
+          {
+            title: 'Manual API one',
+            description: 'Manual task with same capability.',
+            file_scope: ['apps/api/manual-one.ts'],
+            capability_hint: 'api_work',
+          },
+          {
+            title: 'Manual API two',
+            description: 'Manual task with same capability.',
+            file_scope: ['apps/api/manual-two.ts'],
+            capability_hint: 'api_work',
+          },
+        ],
+        { slug: 'manual-plan', session_id: 'planner', agent: 'claude', title: 'Manual plan' },
+      ),
+    });
+    await call('task_plan_publish', {
+      ...publishArgs(
+        [
+          {
+            title: 'Queen API one',
+            description: 'Queen task with same capability.',
+            file_scope: ['apps/api/queen-one.ts'],
+            capability_hint: 'api_work',
+          },
+          {
+            title: 'Queen API two',
+            description: 'Queen task with same capability.',
+            file_scope: ['apps/api/queen-two.ts'],
+            capability_hint: 'api_work',
+          },
+        ],
+        { slug: 'queen-plan', session_id: 'queen', agent: 'queen', title: 'Queen plan' },
+      ),
+    });
+
+    const result = await call<ReadyResult>('task_ready_for_agent', {
+      session_id: 'agent-session',
+      agent: 'codex',
+      repo_root: repoRoot,
+    });
+
+    expect(result.ready.map((entry) => entry.plan_slug)).toEqual([
+      'queen-plan',
+      'queen-plan',
+      'manual-plan',
+      'manual-plan',
+    ]);
+    expect(result.ready[0]?.fit_score).toBe(1);
+    expect(result.ready[0]?.reasoning).toContain('queen-published plan, +0.1 fit boost');
+    expect(result.ready[2]?.fit_score).toBe(0.9);
+    expect(result.ready[2]?.reasoning).not.toContain('queen-published plan');
+  });
+
+  it('clamps queen fit boost at a maximum score of 1.0', async () => {
+    await call('agent_upsert_profile', {
+      agent: 'codex',
+      capabilities: { api_work: 1 },
+    });
+    await call('task_plan_publish', {
+      ...publishArgs(
+        [
+          {
+            title: 'Queen max API one',
+            description: 'Already max-fit queen task.',
+            file_scope: ['apps/api/queen-max-one.ts'],
+            capability_hint: 'api_work',
+          },
+          {
+            title: 'Queen max API two',
+            description: 'Already max-fit queen task.',
+            file_scope: ['apps/api/queen-max-two.ts'],
+            capability_hint: 'api_work',
+          },
+        ],
+        { slug: 'queen-max-plan', session_id: 'queen', agent: 'queen', title: 'Queen max plan' },
+      ),
+    });
+
+    const result = await call<ReadyResult>('task_ready_for_agent', {
+      session_id: 'agent-session',
+      agent: 'codex',
+      repo_root: repoRoot,
+    });
+
+    expect(result.ready).toHaveLength(2);
+    expect(result.ready.every((entry) => entry.fit_score === 1)).toBe(true);
+    expect(result.ready.every((entry) => entry.reasoning.includes('queen-published plan'))).toBe(
+      true,
+    );
   });
 
   it('ranks an unconflicted sub-task before an equal-capability scope conflict', async () => {
