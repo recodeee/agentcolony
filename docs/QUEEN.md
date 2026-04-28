@@ -6,8 +6,8 @@ Queen is the Colony plan publisher. It turns a clear goal into a published
 `task_plan` so other agents can discover, claim, work, and complete independent
 sub-tasks through the normal Colony substrate.
 
-Queen is NEM/not an orchestrator. It does not start agents, assign agents,
-watch running shells, or decide who should do the work. It only publishes
+Queen is not an orchestrator. It does not start agents, assign agents, watch
+running shells, or decide who should do the work. It only publishes
 claimable work with enough structure for the rest of Colony to route it.
 
 Queen follows the repository's biological coordination contract:
@@ -84,9 +84,9 @@ CLI workflow:
 
 MCP workflow:
 
-1. Call `queen_plan_goal` with `repo_root`, `slug`, `session_id`, `agent`,
-   `title`, `problem`, `acceptance_criteria`, `subtasks`, and optional
-   `auto_archive`.
+1. Call `queen_plan_goal` with `repo_root`, `session_id`, `goal_title`,
+   `problem`, `acceptance_criteria`, and optional `affected_files`,
+   `ordering_hint`, `waves`, `finalizer`, or `dry_run`.
 2. Queen validates the heuristic split and publishes through `publishPlan`.
    The underlying write lands in `task_plan_publish`.
 3. Agents call `task_ready_for_agent` to see unblocked work ranked by fit.
@@ -170,24 +170,26 @@ Example ordered plan shape:
     }
   ],
   "subtasks": [
-    { "title": "Agent 2 task", "depends_on": [] },
-    { "title": "Agent 3 task", "depends_on": [] },
-    { "title": "Agent 5 task", "depends_on": [] },
-    { "title": "Agent 6 task", "depends_on": [] },
-    { "title": "Agent 10 task", "depends_on": [] },
-    { "title": "Agent 4 task", "depends_on": [0, 1, 2, 3, 4] },
-    { "title": "Agent 7 task", "depends_on": [0, 1, 2, 3, 4] },
-    { "title": "Agent 8 task", "depends_on": [0, 1, 2, 3, 4] },
-    { "title": "Agent 9 task", "depends_on": [0, 1, 2, 3, 4] },
-    { "title": "Agent 1 task", "depends_on": [5, 6, 7, 8] }
+    { "title": "Planning label Agent 2 task", "depends_on": [] },
+    { "title": "Planning label Agent 3 task", "depends_on": [] },
+    { "title": "Planning label Agent 5 task", "depends_on": [] },
+    { "title": "Planning label Agent 6 task", "depends_on": [] },
+    { "title": "Planning label Agent 10 task", "depends_on": [] },
+    { "title": "Planning label Agent 4 task", "depends_on": [0, 1, 2, 3, 4] },
+    { "title": "Planning label Agent 7 task", "depends_on": [0, 1, 2, 3, 4] },
+    { "title": "Planning label Agent 8 task", "depends_on": [0, 1, 2, 3, 4] },
+    { "title": "Planning label Agent 9 task", "depends_on": [0, 1, 2, 3, 4] },
+    { "title": "Planning label Agent 1 task", "depends_on": [5, 6, 7, 8] }
   ]
 }
 ```
 
-This represents: Wave 1 has Agents 2, 3, 5, 6, and 10; Wave 2 has Agents 4, 7,
-8, and 9; Wave 3 has Agent 1. Queen publishes the flat sub-task structure, so
-existing `task_plan_publish`, `task_plan_validate`, claim, completion, and
-dependency-unlock behavior remain the only execution mechanism.
+The `Agent N` text here is a planning label copied from the source plan, not a
+runtime assignment or command. Workers still choose work by reading
+`task_ready_for_agent` and claiming with `task_plan_claim_subtask`. Queen
+publishes the flat sub-task structure, so existing `task_plan_publish`,
+`task_plan_validate`, claim, completion, and dependency-unlock behavior remain
+the only execution mechanism.
 
 Example: add Stripe webhook with four sub-tasks.
 

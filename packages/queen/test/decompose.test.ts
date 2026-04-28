@@ -16,6 +16,16 @@ interface Overlap {
   shared: string[];
 }
 
+const FORBIDDEN_COMMAND_FIELDS = [
+  'assigned_agent',
+  'launch_agent',
+  'monitor_shell',
+  'monitor_shells',
+  'run_now',
+  'shell_monitor',
+  'shell_monitoring',
+] as const;
+
 function pairwiseScopeOverlap(plan: QueenPlan): Overlap[] {
   const overlaps: Overlap[] = [];
   for (let i = 0; i < plan.subtasks.length; i++) {
@@ -53,6 +63,26 @@ function expectValidPlan(plan: QueenPlan): void {
     for (const dep of subtask?.depends_on ?? []) expect(dep).toBeLessThan(i);
   }
   expect(pairwiseScopeOverlap(plan)).toEqual([]);
+}
+
+function expectNoCommanderFields(value: unknown): void {
+  const keys = new Set<string>();
+  collectKeys(value, keys);
+  for (const field of FORBIDDEN_COMMAND_FIELDS) {
+    expect(keys.has(field)).toBe(false);
+  }
+}
+
+function collectKeys(value: unknown, keys: Set<string>): void {
+  if (Array.isArray(value)) {
+    for (const item of value) collectKeys(item, keys);
+    return;
+  }
+  if (typeof value !== 'object' || value === null) return;
+  for (const [key, nested] of Object.entries(value)) {
+    keys.add(key.toLowerCase());
+    collectKeys(nested, keys);
+  }
 }
 
 describe('planGoal', () => {
@@ -334,6 +364,79 @@ describe('planGoal', () => {
 });
 
 describe('orderedPlanFromWaves', () => {
+  it('publishes wave structure for agent-pull claims without command fields', () => {
+    const plan = orderedPlanFromWaves({
+      slug: 'queen-agent-pull-plan',
+      title: 'Queen agent-pull plan',
+      problem: 'Workers need claimable work with ordering, not runtime commands.',
+      acceptance_criteria: ['Workers pull available subtasks from Colony.'],
+      waves: [
+        {
+          id: 'wave-1',
+          title: 'Parallel planning labels',
+          subtasks: [agentSubtask(2, 'infra_work'), agentSubtask(3, 'api_work')],
+        },
+        {
+          id: 'wave-2',
+          title: 'Verification label',
+          subtasks: [agentSubtask(4, 'test_work')],
+        },
+      ],
+    });
+
+    expect(Object.keys(plan).sort()).toEqual([
+      'acceptance_criteria',
+      'execution_strategy',
+      'problem',
+      'slug',
+      'subtasks',
+      'title',
+      'waves',
+    ]);
+    expect(plan.execution_strategy).toEqual({
+      mode: 'ordered_waves',
+      claim_model: 'agent_pull',
+      scheduler: 'none',
+      wave_dependency: 'previous_wave',
+    });
+    expect(plan.waves).toEqual([
+      {
+        id: 'wave-1',
+        title: 'Parallel planning labels',
+        subtask_indexes: [0, 1],
+      },
+      {
+        id: 'wave-2',
+        title: 'Verification label',
+        subtask_indexes: [2],
+      },
+    ]);
+    expect(plan.subtasks).toEqual([
+      {
+        title: 'Planning label Agent 2 task',
+        description: 'Agent 2 is a planning label, not a runtime assignment.',
+        file_scope: ['agents/agent-2.md'],
+        depends_on: [],
+        capability_hint: 'infra_work',
+      },
+      {
+        title: 'Planning label Agent 3 task',
+        description: 'Agent 3 is a planning label, not a runtime assignment.',
+        file_scope: ['agents/agent-3.md'],
+        depends_on: [],
+        capability_hint: 'api_work',
+      },
+      {
+        title: 'Planning label Agent 4 task',
+        description: 'Agent 4 is a planning label, not a runtime assignment.',
+        file_scope: ['agents/agent-4.md'],
+        depends_on: [0, 1],
+        capability_hint: 'test_work',
+      },
+    ]);
+    expectNoCommanderFields(plan);
+  });
+
   it('maps ordered waves to flat task_plan dependencies', () => {
     const plan = orderedPlanFromWaves({
       slug: 'queen-ordered-agent-plan',
@@ -383,8 +486,9 @@ describe('orderedPlanFromWaves', () => {
       [0, 1, 2, 3, 4],
       [0, 1, 2, 3, 4],
     ]);
-    expect(plan.subtasks.at(-1)?.title).toBe('Agent 1 task');
+    expect(plan.subtasks.at(-1)?.title).toBe('Planning label Agent 1 task');
     expect(plan.subtasks.at(-1)?.depends_on).toEqual([5, 6, 7, 8]);
+    expectNoCommanderFields(plan);
   });
 
   it('represents the exact Colony improvement plan as ordered Queen waves', () => {
@@ -422,6 +526,7 @@ describe('orderedPlanFromWaves', () => {
     ]);
     expect(plan.subtasks.at(-1)?.depends_on).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
     expect(pairwiseScopeOverlap(plan)).toEqual([]);
+    expectNoCommanderFields(plan);
   });
 });
 
@@ -435,8 +540,8 @@ describe('slugFromTitle', () => {
 
 function agentSubtask(agent: number, capability_hint: CapabilityHint): QueenWaveSubtask {
   return {
-    title: `Agent ${agent} task`,
-    description: `Agent ${agent} handles its scoped work.`,
+    title: `Planning label Agent ${agent} task`,
+    description: `Agent ${agent} is a planning label, not a runtime assignment.`,
     file_scope: [`agents/agent-${agent}.md`],
     capability_hint,
   };
