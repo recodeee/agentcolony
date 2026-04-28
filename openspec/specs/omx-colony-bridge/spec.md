@@ -70,6 +70,30 @@ notepad only when Colony is unavailable or missing the required surface.
 - **AND** the fallback record should stay compact enough to migrate back into
   Colony when the surface is restored
 
+### Requirement: Bridge Adoption Metrics Compare Runtime And Coordination Use
+
+Colony SHALL expose bridge adoption metrics that show whether OMX is becoming a
+runtime/display surface while Colony becomes the primary coordination surface.
+
+#### Scenario: Tool telemetry includes OMX and Colony calls
+
+- **WHEN** local tool telemetry is available
+- **THEN** bridge adoption metrics compare `omx_state_get_status` against
+  `bridge_status`
+- **AND** compare `omx_state_write` against `task_note_working` and `task_post`
+- **AND** compare `omx_notepad_write_working` against `task_note_working` and
+  `task_post`
+- **AND** compare `omx_state_list_active` against `hivemind_context` and
+  `hivemind`
+
+#### Scenario: OMX tool telemetry is unavailable
+
+- **WHEN** local telemetry has no OMX tool calls
+- **THEN** bridge adoption metrics report the OMX comparison status as
+  `unavailable`
+- **AND** Colony does not infer fallback replacement ratios from Colony calls
+  alone
+
 ### Requirement: Colony Exposes an OMX HUD Status Shape
 
 Colony SHALL expose one compact bridge status payload for OMX HUD and status

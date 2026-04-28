@@ -45,11 +45,31 @@ export interface StatusReadsBridgeMetric {
   colony_share: number | null;
 }
 
+export interface StateWritesBridgeMetric {
+  status: 'available' | 'unavailable';
+  omx_state_write_calls: number;
+  colony_coordination_write_calls: number;
+  task_post_calls: number;
+  task_note_working_calls: number;
+  colony_share: number | null;
+}
+
+export interface ActiveSessionReadsBridgeMetric {
+  status: 'available' | 'unavailable';
+  omx_state_list_active_calls: number;
+  hivemind_calls: number;
+  hivemind_context_calls: number;
+  colony_active_session_read_calls: number;
+  colony_share: number | null;
+}
+
 export interface BridgeAdoptionMetrics {
   conversions: Record<BridgeConversionName, BridgeConversionMetric>;
   task_list_without_task_ready_for_agent: TaskListWithoutReadyMetric;
   working_notes: WorkingNotesBridgeMetric;
   status_reads: StatusReadsBridgeMetric;
+  state_writes: StateWritesBridgeMetric;
+  active_session_reads: ActiveSessionReadsBridgeMetric;
 }
 
 export function buildBridgeAdoptionMetrics(calls: ToolCallRow[]): BridgeAdoptionMetrics {
@@ -62,6 +82,8 @@ export function buildBridgeAdoptionMetrics(calls: ToolCallRow[]): BridgeAdoption
     task_list_without_task_ready_for_agent: taskListWithoutReady(calls),
     working_notes: workingNotes(calls),
     status_reads: statusReads(calls),
+    state_writes: stateWrites(calls),
+    active_session_reads: activeSessionReads(calls),
   };
 }
 
@@ -165,6 +187,49 @@ function statusReads(calls: ToolCallRow[]): StatusReadsBridgeMetric {
   };
 }
 
+function stateWrites(calls: ToolCallRow[]): StateWritesBridgeMetric {
+  const omxStateWriteCalls = calls.filter((call) => isOmxStateWrite(call.tool)).length;
+  const taskPostCalls = countColonyTool(calls, 'task_post');
+  const taskNoteWorkingCalls = countColonyTool(calls, 'task_note_working');
+  const colonyCoordinationWriteCalls = taskPostCalls + taskNoteWorkingCalls;
+  const status = hasOmxTelemetry(calls) ? 'available' : 'unavailable';
+
+  return {
+    status,
+    omx_state_write_calls: omxStateWriteCalls,
+    colony_coordination_write_calls: colonyCoordinationWriteCalls,
+    task_post_calls: taskPostCalls,
+    task_note_working_calls: taskNoteWorkingCalls,
+    colony_share:
+      status === 'available'
+        ? ratio(colonyCoordinationWriteCalls, colonyCoordinationWriteCalls + omxStateWriteCalls)
+        : null,
+  };
+}
+
+function activeSessionReads(calls: ToolCallRow[]): ActiveSessionReadsBridgeMetric {
+  const omxStateListActiveCalls = calls.filter((call) => isOmxStateListActive(call.tool)).length;
+  const hivemindCalls = countColonyTool(calls, 'hivemind');
+  const hivemindContextCalls = countColonyTool(calls, 'hivemind_context');
+  const colonyActiveSessionReadCalls = hivemindCalls + hivemindContextCalls;
+  const status = hasOmxTelemetry(calls) ? 'available' : 'unavailable';
+
+  return {
+    status,
+    omx_state_list_active_calls: omxStateListActiveCalls,
+    hivemind_calls: hivemindCalls,
+    hivemind_context_calls: hivemindContextCalls,
+    colony_active_session_read_calls: colonyActiveSessionReadCalls,
+    colony_share:
+      status === 'available'
+        ? ratio(
+            colonyActiveSessionReadCalls,
+            colonyActiveSessionReadCalls + omxStateListActiveCalls,
+          )
+        : null,
+  };
+}
+
 function callsBySession(calls: ToolCallRow[]): Map<string, ToolCallRow[]> {
   const bySession = new Map<string, ToolCallRow[]>();
   for (const call of calls) {
@@ -203,6 +268,24 @@ function isOmxStateGetStatus(tool: string): boolean {
   );
 }
 
+function isOmxStateWrite(tool: string): boolean {
+  return (
+    tool === 'omx_state_write' ||
+    tool === 'state_write' ||
+    tool === 'mcp__omx_state__state_write' ||
+    tool === 'mcp__omx_state__omx_state_write'
+  );
+}
+
+function isOmxStateListActive(tool: string): boolean {
+  return (
+    tool === 'omx_state_list_active' ||
+    tool === 'state_list_active' ||
+    tool === 'mcp__omx_state__state_list_active' ||
+    tool === 'mcp__omx_state__omx_state_list_active'
+  );
+}
+
 function isBridgeStatus(tool: string): boolean {
   return (
     tool === 'bridge_status' ||
@@ -217,7 +300,9 @@ function hasOmxTelemetry(calls: ToolCallRow[]): boolean {
       call.tool.startsWith('mcp__omx_') ||
       call.tool.startsWith('omx_') ||
       call.tool.includes('notepad_write_working') ||
-      call.tool.includes('state_get_status'),
+      call.tool.includes('state_get_status') ||
+      call.tool.includes('state_write') ||
+      call.tool.includes('state_list_active'),
   );
 }
 

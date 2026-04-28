@@ -375,6 +375,8 @@ export function sectionBridgeAdoption(ctx: DebriefContext): string[] {
   const taskList = payload.task_list_without_task_ready_for_agent;
   const notes = payload.working_notes;
   const statusReads = payload.status_reads;
+  const stateWrites = payload.state_writes;
+  const activeSessionReads = payload.active_session_reads;
 
   lines.push(
     `  hivemind_context -> attention_inbox: ${formatCountRatio(
@@ -399,7 +401,18 @@ export function sectionBridgeAdoption(ctx: DebriefContext): string[] {
   lines.push(
     `  status reads: status=${statusReads.status}; omx_state_get_status=${statusReads.omx_state_get_status_calls}; bridge_status=${statusReads.bridge_status_calls}; hivemind_context=${statusReads.hivemind_context_calls}; colony share=${formatPercentRatio(statusReads.colony_share)}`,
   );
-  if (notes.status === 'unavailable' || statusReads.status === 'unavailable') {
+  lines.push(
+    `  state writes: status=${stateWrites.status}; omx_state_write=${stateWrites.omx_state_write_calls}; colony coordination writes=${stateWrites.colony_coordination_write_calls} (task_post=${stateWrites.task_post_calls}, task_note_working=${stateWrites.task_note_working_calls}); colony share=${formatPercentRatio(stateWrites.colony_share)}`,
+  );
+  lines.push(
+    `  active-session reads: status=${activeSessionReads.status}; omx_state_list_active=${activeSessionReads.omx_state_list_active_calls}; hivemind=${activeSessionReads.hivemind_calls}; hivemind_context=${activeSessionReads.hivemind_context_calls}; colony share=${formatPercentRatio(activeSessionReads.colony_share)}`,
+  );
+  if (
+    notes.status === 'unavailable' ||
+    statusReads.status === 'unavailable' ||
+    stateWrites.status === 'unavailable' ||
+    activeSessionReads.status === 'unavailable'
+  ) {
     lines.push(
       kleur.dim('  OMX fallback metrics unavailable when no local OMX tool telemetry exists.'),
     );

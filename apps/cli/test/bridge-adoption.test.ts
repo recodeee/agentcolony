@@ -17,8 +17,11 @@ describe('buildBridgeAdoptionMetrics', () => {
       call(7, 'codex-a', 'mcp__colony__bridge_status', 7_000),
       call(8, 'codex-a', 'mcp__omx_memory__notepad_write_working', 8_000),
       call(9, 'codex-a', 'mcp__omx_state__state_get_status', 9_000),
-      call(10, 'codex-b', 'mcp__colony__hivemind_context', 1_500),
-      call(11, 'codex-b', 'mcp__colony__task_list', 2_500),
+      call(10, 'codex-a', 'mcp__omx_state__state_write', 10_000),
+      call(11, 'codex-a', 'mcp__omx_state__state_list_active', 11_000),
+      call(12, 'codex-a', 'mcp__colony__hivemind', 12_000),
+      call(13, 'codex-b', 'mcp__colony__hivemind_context', 1_500),
+      call(14, 'codex-b', 'mcp__colony__task_list', 2_500),
     ]);
 
     expect(metrics.conversions.hivemind_context_to_attention_inbox).toMatchObject({
@@ -58,6 +61,22 @@ describe('buildBridgeAdoptionMetrics', () => {
       colony_status_read_calls: 3,
       colony_share: 3 / 4,
     });
+    expect(metrics.state_writes).toMatchObject({
+      status: 'available',
+      omx_state_write_calls: 1,
+      colony_coordination_write_calls: 2,
+      task_post_calls: 1,
+      task_note_working_calls: 1,
+      colony_share: 2 / 3,
+    });
+    expect(metrics.active_session_reads).toMatchObject({
+      status: 'available',
+      omx_state_list_active_calls: 1,
+      hivemind_calls: 1,
+      hivemind_context_calls: 2,
+      colony_active_session_read_calls: 3,
+      colony_share: 3 / 4,
+    });
   });
 
   it('reports OMX ratios as unavailable when local telemetry has no OMX tool calls', () => {
@@ -76,6 +95,18 @@ describe('buildBridgeAdoptionMetrics', () => {
       status: 'unavailable',
       omx_state_get_status_calls: 0,
       bridge_status_calls: 0,
+      hivemind_context_calls: 1,
+      colony_share: null,
+    });
+    expect(metrics.state_writes).toMatchObject({
+      status: 'unavailable',
+      omx_state_write_calls: 0,
+      colony_coordination_write_calls: 1,
+      colony_share: null,
+    });
+    expect(metrics.active_session_reads).toMatchObject({
+      status: 'unavailable',
+      omx_state_list_active_calls: 0,
       hivemind_context_calls: 1,
       colony_share: null,
     });
