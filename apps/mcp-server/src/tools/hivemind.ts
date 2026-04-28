@@ -1,9 +1,11 @@
+import { resolve } from 'node:path';
 import {
   type AttentionInbox,
   type Embedder,
   type MemoryStore,
   type SearchResult,
   buildAttentionInbox,
+  listPlans,
   readHivemind,
 } from '@colony/core';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -207,6 +209,7 @@ export function register(server: McpServer, ctx: ToolContext): void {
               maxHotFiles,
             })
           : undefined;
+        const readyWorkCount = countReadyWork(store, { repo_root, repo_roots });
 
         return {
           content: [
@@ -217,6 +220,7 @@ export function register(server: McpServer, ctx: ToolContext): void {
                   maxClaims,
                   maxHotFiles,
                   attention: attentionInput,
+                  readyWorkCount,
                   ...(localContext !== undefined ? { localContext } : {}),
                 }),
               ),
@@ -237,6 +241,20 @@ function resolveAttentionIdentity(
     session_id: sessionId ?? detected.sessionId,
     agent: agent ?? agentFromIde(detected.ide),
   };
+}
+
+function countReadyWork(
+  store: MemoryStore,
+  input: { repo_root: string | undefined; repo_roots: string[] | undefined },
+): number {
+  const roots = new Set(
+    [input.repo_root, ...(input.repo_roots ?? [])]
+      .filter((root): root is string => typeof root === 'string' && root.trim().length > 0)
+      .map((root) => resolve(root)),
+  );
+  return listPlans(store, { limit: 2000 })
+    .filter((plan) => roots.size === 0 || roots.has(resolve(plan.repo_root)))
+    .reduce((total, plan) => total + plan.next_available.length, 0);
 }
 
 function agentFromIde(ide: string): string {

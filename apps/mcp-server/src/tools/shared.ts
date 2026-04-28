@@ -28,6 +28,7 @@ export interface HivemindContextBuildOptions {
   maxHotFiles?: number;
   attention?: HivemindContextAttentionInput;
   localContext?: HivemindLocalContext;
+  readyWorkCount?: number;
 }
 
 export interface HivemindContextAttentionInput {
@@ -69,6 +70,12 @@ export interface HivemindContext {
     hot_file_count: number;
     next_action: string;
     suggested_tools: string[];
+    attention_hint: string;
+    ready_work_hint: string;
+    unread_message_count: number;
+    pending_handoff_count: number;
+    blocking: boolean;
+    ready_work_count?: number;
     attention_counts: HivemindContextAttentionCounts;
     state_tool_replacements: Record<string, string[]>;
   };
@@ -185,6 +192,10 @@ export interface HivemindContextAttentionCounts {
 const HIVEMIND_FUNNEL_NEXT_ACTION =
   'Call attention_inbox, then task_ready_for_agent before choosing work.';
 const HIVEMIND_SUGGESTED_TOOLS = ['attention_inbox', 'task_ready_for_agent'];
+const HIVEMIND_ATTENTION_HINT =
+  'Call attention_inbox to review pending handoffs, unread messages, blockers, and stalled lanes before claiming work.';
+const HIVEMIND_READY_WORK_HINT =
+  'Then call task_ready_for_agent to choose claimable work. Use task_list only for browsing/debugging.';
 const STATE_TOOL_REPLACEMENTS = {
   state_get_status: ['hivemind_context', 'attention_inbox'],
   state_list_active: ['hivemind_context'],
@@ -288,6 +299,12 @@ export function buildHivemindContext(
       hot_file_count: ownership.hot_files.length,
       next_action: localContext?.ready_next_action ?? HIVEMIND_FUNNEL_NEXT_ACTION,
       suggested_tools: HIVEMIND_SUGGESTED_TOOLS,
+      attention_hint: HIVEMIND_ATTENTION_HINT,
+      ready_work_hint: HIVEMIND_READY_WORK_HINT,
+      unread_message_count: attention.counts.unread_message_count,
+      pending_handoff_count: attention.counts.pending_handoff_count,
+      blocking: attention.counts.blocked,
+      ...(options.readyWorkCount !== undefined ? { ready_work_count: options.readyWorkCount } : {}),
       attention_counts: attention.counts,
       state_tool_replacements: STATE_TOOL_REPLACEMENTS,
     },
