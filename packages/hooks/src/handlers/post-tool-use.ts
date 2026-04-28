@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {
   type MemoryStore,
   PheromoneSystem,
@@ -17,6 +18,8 @@ import type { HookInput } from '../types.js';
  */
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const TASK_MIRROR_TOOLS = new Set(['TaskCreate', 'TaskUpdate']);
+
+type BashPathContext = { cwd?: string | undefined; repoRoot?: string | undefined };
 
 export async function postToolUse(store: MemoryStore, input: HookInput): Promise<void> {
   const tool = input.tool_name ?? input.tool ?? 'unknown';
@@ -94,10 +97,56 @@ function extractBashCoordinationEvents(
   const taskId = store.storage.findActiveTaskForSession(input.session_id);
   const task = taskId === undefined ? undefined : store.storage.getTask(taskId);
   const detected = task ? null : input.cwd ? detectRepoBranch(input.cwd) : null;
-  return parseBashCoordinationEvents(command, {
+  return normalizeBashEventPaths(parseBashCoordinationEvents(command), {
     cwd: input.cwd,
     repoRoot: task?.repo_root ?? detected?.repo_root ?? input.cwd,
   });
+}
+
+function normalizeBashEventPaths(
+  events: BashCoordinationEvent[],
+  context: BashPathContext,
+): BashCoordinationEvent[] {
+  return events.map((event) => {
+    switch (event.kind) {
+      case 'git-op':
+        return event;
+      case 'file-op':
+        return {
+          ...event,
+          file_paths: unique(
+            event.file_paths.map((filePath) => normalizeHookFilePath(filePath, context)),
+          ),
+        };
+      case 'auto-claim':
+        return {
+          ...event,
+          file_path: normalizeHookFilePath(event.file_path, context),
+        };
+    }
+  });
+}
+
+function normalizeHookFilePath(rawPath: string, context: BashPathContext): string {
+  const repoRoot = context.repoRoot ? path.resolve(context.repoRoot) : undefined;
+  const cwd = context.cwd ? path.resolve(context.cwd) : repoRoot;
+  const absolutePath = path.isAbsolute(rawPath)
+    ? path.normalize(rawPath)
+    : cwd
+      ? path.resolve(cwd, rawPath)
+      : undefined;
+
+  if (!absolutePath) return normalizeSlashes(path.normalize(rawPath));
+  if (repoRoot && isPathInside(absolutePath, repoRoot)) {
+    const relativePath = path.relative(repoRoot, absolutePath);
+    return relativePath ? normalizeSlashes(relativePath) : '.';
+  }
+  return normalizeSlashes(absolutePath);
+}
+
+function isPathInside(child: string, parent: string): boolean {
+  const relativePath = path.relative(parent, child);
+  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
 }
 
 function applyBashRedirectAutoClaims(
@@ -156,6 +205,14 @@ function bashEventMetadata(tool: string, event: BashCoordinationEvent): Record<s
         file_paths: [event.file_path],
       };
   }
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values));
+}
+
+function normalizeSlashes(value: string): string {
+  return value.replaceAll(path.sep, '/');
 }
 
 /**

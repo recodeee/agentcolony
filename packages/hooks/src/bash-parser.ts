@@ -1,5 +1,3 @@
-import path from 'node:path';
-
 const GIT_OPS = new Set(['checkout', 'switch', 'merge', 'rebase', 'reset']);
 const FILE_OPS = new Set(['mv', 'rm', 'cp']);
 const REDIRECT_OPS = new Set(['>', '>>']);
@@ -26,20 +24,12 @@ export type BashCoordinationEvent =
       segment: string;
     };
 
-export interface BashParseOptions {
-  cwd?: string | null | undefined;
-  repoRoot?: string | null | undefined;
-}
-
 interface Token {
   value: string;
   tainted: boolean;
 }
 
-export function parseBashCoordinationEvents(
-  command: string,
-  options: BashParseOptions = {},
-): BashCoordinationEvent[] {
+export function parseBashCoordinationEvents(command: string): BashCoordinationEvent[] {
   if (!command.trim()) return [];
 
   const events: BashCoordinationEvent[] = [];
@@ -49,26 +39,22 @@ export function parseBashCoordinationEvents(
 
     const commandTokens = stripRedirects(tokens);
     const argv = commandTokens.filter((token) => !token.tainted).map((token) => token.value);
-    const commandEvent = parseCommandEvent(argv, segment, options);
+    const commandEvent = parseCommandEvent(argv, segment);
     if (commandEvent) events.push(commandEvent);
 
-    events.push(...parseRedirectEvents(tokens, segment, options));
+    events.push(...parseRedirectEvents(tokens, segment));
   }
 
   return events;
 }
 
-function parseCommandEvent(
-  argv: string[],
-  segment: string,
-  options: BashParseOptions,
-): BashCoordinationEvent | undefined {
+function parseCommandEvent(argv: string[], segment: string): BashCoordinationEvent | undefined {
   if (argv.length === 0) return undefined;
 
   const gitEvent = parseGitEvent(argv, segment);
   if (gitEvent) return gitEvent;
 
-  const fileEvent = parseFileEvent(argv, segment, options);
+  const fileEvent = parseFileEvent(argv, segment);
   if (fileEvent) return fileEvent;
 
   return undefined;
@@ -93,17 +79,13 @@ function parseGitEvent(argv: string[], segment: string): BashCoordinationEvent |
   return undefined;
 }
 
-function parseFileEvent(
-  argv: string[],
-  segment: string,
-  options: BashParseOptions,
-): BashCoordinationEvent | undefined {
+function parseFileEvent(argv: string[], segment: string): BashCoordinationEvent | undefined {
   const op = commandName(argv[0] ?? '');
   if (!isFileOp(op)) return undefined;
 
   const filePaths = unique(
     positionalArgs(argv.slice(1))
-      .map((arg) => normalizeFilePath(arg, options))
+      .map((arg) => parseFilePath(arg))
       .filter((filePath): filePath is string => filePath !== undefined),
   );
   if (filePaths.length === 0) return undefined;
@@ -111,11 +93,7 @@ function parseFileEvent(
   return { kind: 'file-op', op, argv, file_paths: filePaths, segment };
 }
 
-function parseRedirectEvents(
-  tokens: Token[],
-  segment: string,
-  options: BashParseOptions,
-): BashCoordinationEvent[] {
+function parseRedirectEvents(tokens: Token[], segment: string): BashCoordinationEvent[] {
   const events: BashCoordinationEvent[] = [];
   for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
@@ -125,7 +103,7 @@ function parseRedirectEvents(
     const target = tokens[i + 1];
     if (!target || target.tainted || isRedirectTargetSkipped(target.value)) continue;
 
-    const filePath = normalizeFilePath(target.value, options);
+    const filePath = parseFilePath(target.value);
     if (!filePath) continue;
     events.push({
       kind: 'auto-claim',
@@ -328,23 +306,9 @@ function positionalArgs(args: string[]): string[] {
   return paths;
 }
 
-function normalizeFilePath(rawPath: string, options: BashParseOptions): string | undefined {
+function parseFilePath(rawPath: string): string | undefined {
   if (!rawPath || rawPath.startsWith('&')) return undefined;
-
-  const repoRoot = options.repoRoot ? path.resolve(options.repoRoot) : undefined;
-  const cwd = options.cwd ? path.resolve(options.cwd) : repoRoot;
-  const absolutePath = path.isAbsolute(rawPath)
-    ? path.normalize(rawPath)
-    : cwd
-      ? path.resolve(cwd, rawPath)
-      : undefined;
-
-  if (!absolutePath) return normalizeSlashes(path.normalize(rawPath));
-  if (repoRoot && isPathInside(absolutePath, repoRoot)) {
-    const relativePath = path.relative(repoRoot, absolutePath);
-    return relativePath ? normalizeSlashes(relativePath) : '.';
-  }
-  return normalizeSlashes(absolutePath);
+  return rawPath;
 }
 
 function findCommandSubstitutionEnd(input: string, start: number): number {
@@ -426,13 +390,4 @@ function isRedirectTargetSkipped(target: string): boolean {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
-}
-
-function isPathInside(child: string, parent: string): boolean {
-  const relativePath = path.relative(parent, child);
-  return relativePath === '' || (!relativePath.startsWith('..') && !path.isAbsolute(relativePath));
-}
-
-function normalizeSlashes(value: string): string {
-  return value.replaceAll(path.sep, '/');
 }

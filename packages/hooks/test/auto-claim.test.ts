@@ -268,7 +268,7 @@ describe('runHook integration: A edits -> B sees warning', () => {
       {
         session_id: 'A',
         ide: 'codex',
-        cwd: '/repo',
+        cwd: '/repo/packages/hooks',
         tool_name: 'Bash',
         tool_input: { command: 'printf "exported" > src/generated.ts' },
         tool_response: { success: true },
@@ -276,12 +276,14 @@ describe('runHook integration: A edits -> B sees warning', () => {
       { store },
     );
     expect(bash.ok).toBe(true);
-    expect(store.storage.getClaim(task_id, 'src/generated.ts')?.session_id).toBe('A');
+    expect(store.storage.getClaim(task_id, 'packages/hooks/src/generated.ts')?.session_id).toBe(
+      'A',
+    );
     const autoClaims = store.storage.taskObservationsByKind(task_id, 'auto-claim');
     expect(autoClaims).toHaveLength(1);
     expect(metadataOf(autoClaims[0])).toMatchObject({
       source: 'post-tool-use',
-      file_path: 'src/generated.ts',
+      file_path: 'packages/hooks/src/generated.ts',
       tool: 'Write',
     });
 
@@ -291,6 +293,6 @@ describe('runHook integration: A edits -> B sees warning', () => {
       { store },
     );
     expect(nextTurn.ok).toBe(true);
-    expect(nextTurn.context).toContain('src/generated.ts');
+    expect(nextTurn.context).toContain('packages/hooks/src/generated.ts');
   });
 });
