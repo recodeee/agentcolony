@@ -153,6 +153,10 @@ describe('Colony CLI program', () => {
       'status',
       'sweep',
     ]);
+    const plan = queen?.commands.find((c) => c.name() === 'plan');
+    expect(plan?.options.find((o) => o.long === '--file')).toBeDefined();
+    expect(plan?.options.find((o) => o.long === '--json')).toBeDefined();
+    expect(plan?.options.find((o) => o.long === '--dry-run')).toBeDefined();
     const sweep = queen?.commands.find((c) => c.name() === 'sweep');
     expect(sweep).toBeDefined();
     expect(sweep?.options.find((o) => o.long === '--dry-run')).toBeDefined();
