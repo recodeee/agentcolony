@@ -1,6 +1,8 @@
 import {
   type AgentCapabilities,
+  type ClaimHolder,
   type MemoryStore,
+  scopeOverlap as coreScopeOverlap,
   detectRepoBranch,
   listPlans,
 } from '@colony/core';
@@ -8,23 +10,11 @@ import type { HookInput } from './types.js';
 
 type CapabilityKey = keyof AgentCapabilities;
 
-interface StoredClaim {
-  file_path: string;
-  session_id: string;
-  claimed_at: number;
-  agent?: string | null;
-  ide?: string | null;
-}
-
 export interface ScopeOverlap {
   file_path: string;
   session_id: string;
   holder: string;
   claimed_at: number;
-}
-
-interface ClaimsForPathsStorage {
-  claimsForPaths?: (paths: string[]) => unknown;
 }
 
 const CAPABILITY_KEYS: CapabilityKey[] = [
@@ -71,23 +61,23 @@ export function scopeOverlap(
   const intended = new Set(normalizePaths(p.intended_paths));
   if (intended.size === 0) return [];
 
-  let raw: unknown;
+  let overlaps: ReturnType<typeof coreScopeOverlap>;
   try {
-    raw = (store.storage as unknown as ClaimsForPathsStorage).claimsForPaths?.([...intended]);
+    overlaps = coreScopeOverlap(store, {
+      intended_paths: [...intended],
+      my_session_id: p.my_session_id,
+    });
   } catch {
     return [];
   }
-  if (raw === undefined || raw === null) return [];
 
-  const rows = normalizeClaimRows(raw);
-  return rows
+  return overlaps
     .filter((row) => intended.has(row.file_path))
-    .filter((row) => row.session_id !== p.my_session_id)
     .map((row) => ({
       file_path: row.file_path,
-      session_id: row.session_id,
-      holder: holderLabel(store, row),
-      claimed_at: row.claimed_at,
+      session_id: row.held_by.session_id,
+      holder: holderLabel(store, row.held_by),
+      claimed_at: row.held_by.claimed_at,
     }))
     .sort((a, b) => a.claimed_at - b.claimed_at || a.file_path.localeCompare(b.file_path));
 }
@@ -136,34 +126,10 @@ function normalizePaths(paths: unknown[]): string[] {
   return out;
 }
 
-function normalizeClaimRows(raw: unknown): StoredClaim[] {
-  const rows = Array.isArray(raw)
-    ? raw
-    : raw && typeof raw === 'object' && Array.isArray((raw as { claims?: unknown }).claims)
-      ? (raw as { claims: unknown[] }).claims
-      : [];
-  return rows
-    .map((row): StoredClaim | null => {
-      if (!row || typeof row !== 'object') return null;
-      const claim = row as Record<string, unknown>;
-      if (typeof claim.file_path !== 'string') return null;
-      if (typeof claim.session_id !== 'string') return null;
-      const claimedAt = Number(claim.claimed_at);
-      return {
-        file_path: claim.file_path,
-        session_id: claim.session_id,
-        claimed_at: Number.isFinite(claimedAt) ? claimedAt : 0,
-        agent: typeof claim.agent === 'string' ? claim.agent : null,
-        ide: typeof claim.ide === 'string' ? claim.ide : null,
-      };
-    })
-    .filter((row): row is StoredClaim => row !== null);
-}
-
-function holderLabel(store: MemoryStore, claim: StoredClaim): string {
-  const session = store.storage.getSession(claim.session_id);
-  const agent = normalizeAgent(claim.agent ?? claim.ide ?? session?.ide ?? claim.session_id);
-  return `${agent}@${shortSessionId(claim.session_id)}`;
+function holderLabel(store: MemoryStore, holder: ClaimHolder): string {
+  const session = store.storage.getSession(holder.session_id);
+  const agent = normalizeAgent(holder.agent ?? session?.ide ?? holder.session_id);
+  return `${agent}@${shortSessionId(holder.session_id)}`;
 }
 
 function normalizeAgent(value: string): string {
