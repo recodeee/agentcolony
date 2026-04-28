@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { parseBashCoordinationEvents } from '../src/bash-parser.js';
 
-function compact(command: string, opts: { cwd?: string; repoRoot?: string } = {}) {
-  return parseBashCoordinationEvents(command, opts).map((event) => {
+function compact(command: string) {
+  return parseBashCoordinationEvents(command).map((event) => {
     if (event.kind === 'git-op') return { kind: event.kind, op: event.op };
     if (event.kind === 'file-op') {
       return { kind: event.kind, op: event.op, file_paths: event.file_paths };
@@ -19,7 +19,6 @@ describe('parseBashCoordinationEvents', () => {
   const cases: Array<{
     name: string;
     command: string;
-    opts?: { cwd?: string; repoRoot?: string };
     expected: ReturnType<typeof compact>;
   }> = [
     {
@@ -145,32 +144,28 @@ describe('parseBashCoordinationEvents', () => {
       expected: [],
     },
     {
-      name: 'relative path from nested cwd becomes repo relative',
+      name: 'relative path stays relative',
       command: 'rm src/local.ts',
-      opts: { cwd: '/repo/packages/hooks', repoRoot: '/repo' },
-      expected: [{ kind: 'file-op', op: 'rm', file_paths: ['packages/hooks/src/local.ts'] }],
+      expected: [{ kind: 'file-op', op: 'rm', file_paths: ['src/local.ts'] }],
     },
     {
-      name: 'absolute path inside repo becomes repo relative',
+      name: 'absolute path inside repo stays absolute',
       command: 'cp /repo/src/a.ts /repo/src/b.ts',
-      opts: { cwd: '/repo', repoRoot: '/repo' },
-      expected: [{ kind: 'file-op', op: 'cp', file_paths: ['src/a.ts', 'src/b.ts'] }],
+      expected: [{ kind: 'file-op', op: 'cp', file_paths: ['/repo/src/a.ts', '/repo/src/b.ts'] }],
     },
     {
       name: 'absolute path outside repo stays absolute',
       command: 'rm /tmp/outside.ts',
-      opts: { cwd: '/repo', repoRoot: '/repo' },
       expected: [{ kind: 'file-op', op: 'rm', file_paths: ['/tmp/outside.ts'] }],
     },
     {
-      name: 'relative path outside repo cwd becomes absolute',
-      command: 'rm outside.ts',
-      opts: { cwd: '/tmp', repoRoot: '/repo' },
-      expected: [{ kind: 'file-op', op: 'rm', file_paths: ['/tmp/outside.ts'] }],
+      name: 'parent-relative path stays relative',
+      command: 'rm ../outside.ts',
+      expected: [{ kind: 'file-op', op: 'rm', file_paths: ['../outside.ts'] }],
     },
   ];
 
-  it.each(cases)('$name', ({ command, opts, expected }) => {
-    expect(compact(command, opts)).toEqual(expected);
+  it.each(cases)('$name', ({ command, expected }) => {
+    expect(compact(command)).toEqual(expected);
   });
 });

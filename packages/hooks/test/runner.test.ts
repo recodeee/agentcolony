@@ -99,7 +99,7 @@ describe('runHook', () => {
     expect(tl[0]?.metadata).toEqual({ tool: 'Bash' });
   });
 
-  it('post-tool-use surfaces Bash git and file operations as coordination events', async () => {
+  it('post-tool-use surfaces Bash git, file, and redirect operations as coordination events', async () => {
     await runHook('session-start', { session_id: 'sess-bash', ide: 'codex' }, { store });
     const r = await runHook(
       'post-tool-use',
@@ -107,7 +107,7 @@ describe('runHook', () => {
         session_id: 'sess-bash',
         ide: 'codex',
         tool_name: 'Bash',
-        tool_input: { command: 'git checkout main && rm old.ts' },
+        tool_input: { command: 'git checkout main && rm old.ts > log.txt' },
         tool_response: { success: true },
       },
       { store },
@@ -117,7 +117,7 @@ describe('runHook', () => {
     const tl = store.timeline('sess-bash');
     expect(tl.filter((obs) => obs.kind === 'git-op')).toHaveLength(1);
     expect(tl.filter((obs) => obs.kind === 'file-op')).toHaveLength(1);
-    expect(tl.filter((obs) => obs.kind === 'auto-claim')).toHaveLength(0);
+    expect(tl.filter((obs) => obs.kind === 'auto-claim')).toHaveLength(1);
     expect(tl.find((obs) => obs.kind === 'git-op')?.metadata).toMatchObject({
       op: 'checkout',
       source: 'bash-parser',
@@ -126,6 +126,11 @@ describe('runHook', () => {
       op: 'rm',
       file_path: 'old.ts',
       source: 'bash-parser',
+    });
+    expect(tl.find((obs) => obs.kind === 'auto-claim')?.metadata).toMatchObject({
+      file_path: 'log.txt',
+      source: 'post-tool-use',
+      tool: 'Write',
     });
   });
 
