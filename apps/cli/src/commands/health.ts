@@ -43,6 +43,7 @@ interface SharePayload {
   colony_mcp_tool_calls: number;
   share_of_all_tool_calls: number | null;
   share_of_mcp_tool_calls: number | null;
+  top_tools: Array<{ tool: string; calls: number }>;
 }
 
 interface ConversionPayload {
@@ -183,6 +184,7 @@ export function buildColonyHealthPayload(
       colony_mcp_tool_calls: colonyMcpToolCalls,
       share_of_all_tool_calls: ratio(colonyMcpToolCalls, totalToolCalls),
       share_of_mcp_tool_calls: ratio(colonyMcpToolCalls, mcpToolCalls),
+      top_tools: topToolsByCount(calls, HEALTH_TOOL_LIMIT),
     },
     conversions: Object.fromEntries(conversionEntries) as Record<ConversionName, ConversionPayload>,
     task_list_vs_task_ready_for_agent: taskSelection,
@@ -234,9 +236,30 @@ export function formatColonyHealthOutput(
       payload.colony_mcp_share.mcp_tool_calls,
       payload.colony_mcp_share.share_of_mcp_tool_calls,
     )}`,
-    '',
-    kleur.bold('Loop adoption'),
   ];
+
+  // When the window has tool calls but none look like MCP, the recording layer
+  // is almost certainly bypassing colony's PostToolUse hook for this editor —
+  // surface the actual top tools so the zero-state is debuggable instead of
+  // silent.
+  if (
+    payload.colony_mcp_share.mcp_tool_calls === 0 &&
+    payload.colony_mcp_share.total_tool_calls > 0
+  ) {
+    lines.push(
+      kleur.yellow(
+        '  no mcp__ tool calls in window — colony hook may not be wired into this editor session',
+      ),
+    );
+    if (payload.colony_mcp_share.top_tools.length > 0) {
+      const summary = payload.colony_mcp_share.top_tools
+        .map((entry) => `${entry.tool} (${entry.calls})`)
+        .join(', ');
+      lines.push(`  top recorded tools: ${summary}`);
+    }
+  }
+
+  lines.push('', kleur.bold('Loop adoption'));
 
   for (const item of Object.values(payload.conversions)) {
     lines.push(
@@ -659,6 +682,19 @@ function countTool(calls: ToolCallRow[], toolName: string): number {
 function countAnyTool(calls: ToolCallRow[], tools: string[]): number {
   const names = new Set(tools);
   return calls.filter((call) => names.has(call.tool)).length;
+}
+
+function topToolsByCount(
+  calls: ToolCallRow[],
+  limit: number,
+): Array<{ tool: string; calls: number }> {
+  const counts = new Map<string, number>();
+  for (const call of calls) {
+    counts.set(call.tool, (counts.get(call.tool) ?? 0) + 1);
+  }
+  return Array.from(counts, ([tool, count]) => ({ tool, calls: count }))
+    .sort((a, b) => b.calls - a.calls || a.tool.localeCompare(b.tool))
+    .slice(0, limit);
 }
 
 function isMcpTool(tool: string): boolean {

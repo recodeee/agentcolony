@@ -256,6 +256,59 @@ describe('colony health payload', () => {
     );
   });
 
+  it('surfaces top recorded tools and a hook-wiring hint when no mcp__ calls land in the window', () => {
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: [
+          call(1, 'codex-alpha-session', 'Bash', NOW - 90_000),
+          call(2, 'codex-alpha-session', 'Bash', NOW - 89_000),
+          call(3, 'codex-alpha-session', 'Read', NOW - 88_000),
+          call(4, 'codex-alpha-session', 'Edit', NOW - 87_000),
+          call(5, 'codex-alpha-session', 'Bash', NOW - 86_000),
+        ],
+        claimBeforeEdit: {
+          edit_tool_calls: 1,
+          edits_with_file_path: 0,
+          edits_claimed_before: 0,
+        },
+      }),
+      { since: SINCE, window_hours: 24, now: NOW },
+    );
+
+    expect(payload.colony_mcp_share).toMatchObject({
+      total_tool_calls: 5,
+      mcp_tool_calls: 0,
+      colony_mcp_tool_calls: 0,
+    });
+    expect(payload.colony_mcp_share.top_tools).toEqual([
+      { tool: 'Bash', calls: 3 },
+      { tool: 'Edit', calls: 1 },
+      { tool: 'Read', calls: 1 },
+    ]);
+
+    const text = formatColonyHealthOutput(payload);
+    expect(text).toContain('no mcp__ tool calls in window');
+    expect(text).toContain('top recorded tools: Bash (3), Edit (1), Read (1)');
+  });
+
+  it('omits the zero-mcp diagnostic when the window is genuinely empty', () => {
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: [],
+        claimBeforeEdit: {
+          edit_tool_calls: 0,
+          edits_with_file_path: 0,
+          edits_claimed_before: 0,
+        },
+      }),
+      { since: SINCE, window_hours: 24, now: NOW },
+    );
+
+    expect(payload.colony_mcp_share.top_tools).toEqual([]);
+    const text = formatColonyHealthOutput(payload);
+    expect(text).not.toContain('no mcp__ tool calls in window');
+  });
+
   it('reports claim-before-edit correlation as unavailable when edit metadata is incomplete', () => {
     const payload = buildColonyHealthPayload(
       fakeStorage({
