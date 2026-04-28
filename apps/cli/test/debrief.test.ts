@@ -275,7 +275,10 @@ describe('debrief --json', () => {
         toolCall(5, 'codex-a', 'mcp__colony__bridge_status', 5_000),
         toolCall(6, 'codex-a', 'mcp__omx_memory__notepad_write_working', 6_000),
         toolCall(7, 'codex-a', 'mcp__omx_state__state_get_status', 7_000),
-        toolCall(8, 'codex-b', 'mcp__colony__task_list', 8_000),
+        toolCall(8, 'codex-a', 'mcp__omx_state__state_write', 8_000),
+        toolCall(9, 'codex-a', 'mcp__omx_state__state_list_active', 9_000),
+        toolCall(10, 'codex-a', 'mcp__colony__hivemind', 10_000),
+        toolCall(11, 'codex-b', 'mcp__colony__task_list', 11_000),
       ],
     });
     mocks.withStorage.mockImplementation(
@@ -309,6 +312,18 @@ describe('debrief --json', () => {
         status: 'available',
         omx_state_get_status_calls: 1,
         bridge_status_calls: 1,
+        hivemind_context_calls: 1,
+      },
+      state_writes: {
+        status: 'available',
+        omx_state_write_calls: 1,
+        colony_coordination_write_calls: 1,
+        task_note_working_calls: 1,
+      },
+      active_session_reads: {
+        status: 'available',
+        omx_state_list_active_calls: 1,
+        hivemind_calls: 1,
         hivemind_context_calls: 1,
       },
     });
