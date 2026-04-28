@@ -63,8 +63,10 @@ export function register(server: McpServer, ctx: ToolContext): void {
         limit: 2000,
       });
       const profile = loadProfile(store.storage, agent);
-      const createdAtByTaskId = new Map(
-        store.storage.listTasks(2000).map((t) => [t.id, t.created_at]),
+      const tasksById = new Map(
+        store.storage
+          .listTasks(2000)
+          .map((t) => [t.id, { created_at: t.created_at, created_by: t.created_by }]),
       );
       const ranked = plans
         .flatMap((plan) =>
@@ -74,7 +76,8 @@ export function register(server: McpServer, ctx: ToolContext): void {
               subtask,
               session_id,
               profile,
-              created_at: createdAtByTaskId.get(subtask.task_id) ?? plan.created_at,
+              parent_plan_created_by: tasksById.get(plan.spec_task_id)?.created_by ?? null,
+              created_at: tasksById.get(subtask.task_id)?.created_at ?? plan.created_at,
             }),
           ),
         )
@@ -97,6 +100,7 @@ function rankSubtask(
     subtask: SubtaskInfo;
     session_id: string;
     profile: AgentProfile;
+    parent_plan_created_by: string | null;
     created_at: number;
   },
 ): RankedSubtask {
@@ -104,8 +108,9 @@ function rankSubtask(
   const conflicts = scopeConflicts(store, args.subtask.file_scope, args.session_id);
   const scopeConflictPenalty = conflicts.length > 0 ? 1 : 0;
   const recentClaimDensity = recentReleaseDensity(store, args.subtask.file_scope);
+  const queenBonus = args.parent_plan_created_by === 'queen' ? 0.1 : 0;
   const fitScore = clampScore(
-    capabilityMatch - 0.3 * scopeConflictPenalty - 0.1 * recentClaimDensity,
+    capabilityMatch - 0.3 * scopeConflictPenalty - 0.1 * recentClaimDensity + queenBonus,
   );
 
   return {
@@ -121,6 +126,7 @@ function rankSubtask(
       file_count: args.subtask.file_scope.length,
       conflicts,
       recent_claim_density: recentClaimDensity,
+      queen_bonus: queenBonus,
     }),
     created_at: args.created_at,
   };
@@ -207,6 +213,7 @@ function buildReasoning(args: {
   file_count: number;
   conflicts: ScopeConflict[];
   recent_claim_density: number;
+  queen_bonus: number;
 }): string {
   const capability =
     args.capability_hint === null
@@ -220,7 +227,8 @@ function buildReasoning(args: {
       : `${args.conflicts.length} of ${args.file_count} files in scope held by ${holderSummary(
           args.conflicts,
         )}`;
-  return `${capability}; ${scope}; recent claim density ${args.recent_claim_density}`;
+  const queen = args.queen_bonus > 0 ? '; queen-published plan, +0.1 fit boost' : '';
+  return `${capability}; ${scope}; recent claim density ${args.recent_claim_density}${queen}`;
 }
 
 function holderSummary(conflicts: ScopeConflict[]): string {
