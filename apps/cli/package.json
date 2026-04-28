@@ -29,7 +29,7 @@
   },
   "type": "module",
   "bin": {
-    "colony": "./dist/index.js"
+    "colony": "dist/index.js"
   },
   "main": "./dist/index.js",
   "files": ["dist", "hooks-scripts", "README.md", "LICENSE"],
@@ -39,6 +39,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "stage-publish": "node scripts/prepack.mjs",
+    "prepack": "node scripts/prepack.mjs",
     "prepublishOnly": "node scripts/prepack.mjs"
   },
   "dependencies": {
