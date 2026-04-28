@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { type MemoryStore, PheromoneSystem, ProposalSystem, detectRepoBranch } from '@colony/core';
+import { activeTaskCandidatesForSession, autoClaimFileForSession } from '../auto-claim.js';
 import { type BashCoordinationEvent, parseBashCoordinationEvents } from '../bash-parser.js';
 import { ensureHookTaskForSession, mirrorTaskToolUse } from '../task-mirror.js';
 import type { HookInput } from '../types.js';
@@ -225,9 +226,9 @@ export function extractTouchedFiles(toolName: string, toolInput: unknown): strin
 }
 
 /**
- * Auto-claim files the current session just edited. No-op when the session
- * isn't joined to a task — solo agents don't need claims because there's
- * no one to conflict with.
+ * Auto-claim files the current session just edited. Uses the same
+ * unambiguous active-task resolution as the preflight helper, while keeping
+ * the legacy synthetic-task fallback for bare hook calls.
  *
  * Returns the list of files newly claimed and the list of files that were
  * held by a different session at the moment we took over. Exposed for
@@ -242,45 +243,71 @@ export function autoClaimFromToolUse(
   const files = extractTouchedFiles(toolName, input.tool_input);
   if (files.length === 0) return { claimed: [], conflicts: [] };
 
-  const task_id = ensureHookTaskForSession(store, input);
-
   const claimed: string[] = [];
   const conflicts: Array<{ file_path: string; other_session: string }> = [];
+  const candidate = activeTaskCandidateForToolUse(store, input);
+  if (!candidate) return { claimed, conflicts };
 
   for (const file_path of files) {
-    // Check-then-claim: the gap is irrelevant for correctness because
-    // we're not enforcing a lock, we're surfacing observed overlap. Two
-    // separate ops let us report "this WAS someone else's before I took
-    // over" cleanly in the return value.
-    const existing = store.storage.getClaim(task_id, file_path);
+    const existing = store.storage.getClaim(candidate.task_id, file_path);
     if (existing?.session_id === input.session_id) continue;
-    if (existing && existing.session_id !== input.session_id) {
-      conflicts.push({ file_path, other_session: existing.session_id });
-      store.addObservation({
-        session_id: input.session_id,
-        kind: 'claim-conflict',
-        content: `${input.session_id} edited ${file_path} while ${existing.session_id} held the claim`,
-        task_id,
-        metadata: {
-          source: 'post-tool-use',
-          file_path,
-          tool: toolName,
-          other_session: existing.session_id,
-        },
-      });
-    }
-    store.storage.claimFile({ task_id, file_path, session_id: input.session_id });
-    store.addObservation({
+    const result = autoClaimFileForSession(store, {
       session_id: input.session_id,
-      kind: 'auto-claim',
-      content: `${input.session_id} auto-claimed ${file_path} after ${toolName}`,
-      task_id,
-      metadata: { source: 'post-tool-use', file_path, tool: toolName },
+      repo_root: candidate.repo_root,
+      branch: candidate.branch,
+      file_path,
+      source: 'post-tool-use',
+      tool: toolName,
+      observation_kind: 'auto-claim',
+      record_conflict: true,
     });
+    if (!result.ok || result.status !== 'claimed') continue;
+    if (existing?.session_id && existing.session_id !== input.session_id) {
+      conflicts.push({ file_path, other_session: existing.session_id });
+    }
     claimed.push(file_path);
   }
 
   return { claimed, conflicts };
+}
+
+function activeTaskCandidateForToolUse(
+  store: MemoryStore,
+  input: Pick<HookInput, 'session_id' | 'ide' | 'cwd'>,
+):
+  | {
+      task_id: number;
+      repo_root: string;
+      branch: string;
+    }
+  | null {
+  const session = store.storage.getSession(input.session_id);
+  const cwd = input.cwd ?? session?.cwd ?? undefined;
+  const detected = cwd ? detectRepoBranch(cwd) : null;
+  const candidates = activeTaskCandidatesForSession(store, {
+    session_id: input.session_id,
+    ...(detected ? { repo_root: detected.repo_root, branch: detected.branch } : {}),
+  });
+
+  if (candidates.length === 1) {
+    const candidate = candidates[0];
+    if (!candidate) return null;
+    return {
+      task_id: candidate.task_id,
+      repo_root: candidate.repo_root,
+      branch: candidate.branch,
+    };
+  }
+
+  if (candidates.length > 1 || detected) return null;
+
+  // Preserve the existing PostToolUse safety net for bare hook calls: if a
+  // caller gives cwd/ide but no task has joined yet, materialize the hook task
+  // and then resolve it through the same unambiguous candidate path.
+  const task_id = ensureHookTaskForSession(store, input);
+  const task = store.storage.getTask(task_id);
+  if (!task) return null;
+  return { task_id, repo_root: task.repo_root, branch: task.branch };
 }
 
 /**
