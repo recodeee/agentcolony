@@ -300,9 +300,37 @@ Returns:
   "schema": "colony.omx_hud_status.v1",
   "generated_at": "2026-04-28T21:30:00.000Z",
   "runtime_source": "omx",
+  "hivemind": {
+    "lane_count": 1,
+    "total_lane_count": 1,
+    "lanes_truncated": false,
+    "needs_attention_count": 0,
+    "counts": {
+      "working": 1,
+      "thinking": 0,
+      "idle": 0,
+      "stalled": 0,
+      "dead": 0,
+      "unknown": 0
+    },
+    "lane_preview": [
+      {
+        "branch": "agent/codex/live-task",
+        "task": "Ship bridge status",
+        "owner": "codex/codex",
+        "activity": "working",
+        "needs_attention": false,
+        "risk": "none",
+        "source": "active-session",
+        "locked_file_count": 1,
+        "locked_file_preview": ["apps/mcp-server/src/tools/bridge.ts"]
+      }
+    ]
+  },
   "branch": "agent/codex/live-task",
   "task": "Ship bridge status",
   "blocker": null,
+  "next_action": "Continue agent/codex/live-task.",
   "next": "Continue agent/codex/live-task.",
   "evidence": {
     "task_id": 17,
@@ -319,6 +347,15 @@ Returns:
     "pending_wake_count": 0,
     "stalled_lane_count": 0
   },
+  "attention_counts": {
+    "lane_needs_attention_count": 0,
+    "pending_handoff_count": 0,
+    "pending_wake_count": 0,
+    "unread_message_count": 0,
+    "stalled_lane_count": 0,
+    "recent_other_claim_count": 0,
+    "blocked": false
+  },
   "ready_work_count": 1,
   "ready_work_preview": [
     {
@@ -330,6 +367,16 @@ Returns:
       "capability_hint": "api_work",
       "file_count": 2,
       "file_scope_preview": ["apps/mcp-server/src/tools/bridge.ts"]
+    }
+  ],
+  "claimed_file_count": 1,
+  "claimed_file_preview": [
+    {
+      "task_id": 17,
+      "file_path": "apps/mcp-server/src/tools/bridge.ts",
+      "by_session_id": "sess_abc",
+      "claimed_at": 1710000000000,
+      "yours": true
     }
   ],
   "claimed_files": [
@@ -357,7 +404,9 @@ Inputs:
 - `branch`: optional current branch hint used to pick the active lane.
 - `query`: optional compact context query. No memory hits or full observation bodies are returned.
 
-The payload is intentionally HUD-sized. Hydrate `evidence.attention_observation_ids`
+The payload is intentionally HUD-sized. `hivemind.lane_preview`,
+`ready_work_preview`, and `claimed_file_preview` are capped previews. `next` is
+a legacy alias for `next_action`. Hydrate `evidence.attention_observation_ids`
 with `get_observations` only after the user expands the card or needs the full
 body. Use `hivemind_context`, `attention_inbox`, or `task_ready_for_agent`
 directly when the agent needs progressive-disclosure IDs or richer details.

@@ -87,9 +87,37 @@ overlays so OMX does not parse multiple independent Colony tools.
   "schema": "colony.omx_hud_status.v1",
   "generated_at": "2026-04-28T21:30:00.000Z",
   "runtime_source": "omx",
+  "hivemind": {
+    "lane_count": 1,
+    "total_lane_count": 1,
+    "lanes_truncated": false,
+    "needs_attention_count": 0,
+    "counts": {
+      "working": 1,
+      "thinking": 0,
+      "idle": 0,
+      "stalled": 0,
+      "dead": 0,
+      "unknown": 0
+    },
+    "lane_preview": [
+      {
+        "branch": "agent/codex/example",
+        "task": "Example task",
+        "owner": "codex/codex",
+        "activity": "working",
+        "needs_attention": false,
+        "risk": "none",
+        "source": "active-session",
+        "locked_file_count": 1,
+        "locked_file_preview": ["apps/mcp-server/src/tools/bridge.ts"]
+      }
+    ]
+  },
   "branch": "agent/codex/example",
   "task": "Example task",
   "blocker": null,
+  "next_action": "No immediate Colony action.",
   "next": "No immediate Colony action.",
   "evidence": {
     "task_id": 17,
@@ -106,8 +134,19 @@ overlays so OMX does not parse multiple independent Colony tools.
     "pending_wake_count": 0,
     "stalled_lane_count": 0
   },
+  "attention_counts": {
+    "lane_needs_attention_count": 0,
+    "pending_handoff_count": 0,
+    "pending_wake_count": 0,
+    "unread_message_count": 0,
+    "stalled_lane_count": 0,
+    "recent_other_claim_count": 0,
+    "blocked": false
+  },
   "ready_work_count": 0,
   "ready_work_preview": [],
+  "claimed_file_count": 0,
+  "claimed_file_preview": [],
   "claimed_files": [],
   "latest_working_note": null
 }
@@ -118,6 +157,15 @@ overlays so OMX does not parse multiple independent Colony tools.
 - **WHEN** `bridge_status` returns blocker or evidence references
 - **THEN** it returns compact counts, IDs, and the latest task note preview
 - **AND** full observation bodies stay behind `get_observations`.
+
+#### Scenario: HUD renders from compact previews
+
+- **WHEN** OMX needs active-lane, attention, ready-work, and claim state for a
+  compact display
+- **THEN** `bridge_status` returns `hivemind.lane_preview`,
+  `attention_counts`, `ready_work_preview`, `claimed_file_count`,
+  `claimed_file_preview`, and `next_action`
+- **AND** `next` remains a compatibility alias for `next_action`.
 
 ## Anti-Rules
 

@@ -20,6 +20,7 @@ import {
 const BRIDGE_LANE_LIMIT = 8;
 const BRIDGE_READY_LIMIT = 3;
 const BRIDGE_PREVIEW_LIMIT = 3;
+const BRIDGE_LANE_PREVIEW_LIMIT = 3;
 const BRIDGE_NOTE_LIMIT = 240;
 const BRIDGE_EVIDENCE_LIMIT = 8;
 
@@ -29,9 +30,29 @@ interface BridgeStatus {
   schema: 'colony.omx_hud_status.v1';
   generated_at: string;
   runtime_source: RuntimeSource;
+  hivemind: {
+    lane_count: number;
+    total_lane_count: number;
+    lanes_truncated: boolean;
+    needs_attention_count: number;
+    counts: HivemindContext['counts'];
+    lane_preview: Array<{
+      branch: string;
+      task: string;
+      owner: string;
+      activity: HivemindContextLane['activity'];
+      needs_attention: boolean;
+      risk: string;
+      source: HivemindContextLane['source'];
+      locked_file_count: number;
+      locked_file_preview: string[];
+    }>;
+  };
   branch: string | null;
   task: string | null;
   blocker: string | null;
+  next_action: string;
+  /** @deprecated Use next_action. Kept for existing HUD consumers. */
   next: string;
   evidence: {
     task_id: number | null;
@@ -48,6 +69,7 @@ interface BridgeStatus {
     pending_wake_count: number;
     stalled_lane_count: number;
   };
+  attention_counts: HivemindContext['attention']['counts'];
   ready_work_count: number;
   ready_work_preview: Array<{
     title: string;
@@ -58,6 +80,14 @@ interface BridgeStatus {
     capability_hint: string | null;
     file_count: number;
     file_scope_preview: string[];
+  }>;
+  claimed_file_count: number;
+  claimed_file_preview: Array<{
+    task_id: number;
+    file_path: string;
+    by_session_id: string;
+    claimed_at: number;
+    yours: boolean;
   }>;
   claimed_files: Array<{
     task_id: number;
@@ -81,7 +111,7 @@ export function register(server: McpServer, ctx: ToolContext): void {
 
   server.tool(
     'bridge_status',
-    'Show compact bridge status for OMX HUD/status. Returns branch/task/blocker/next/evidence, attention counts, ready count, claims, and latest note without observation bodies.',
+    'Show compact bridge status for OMX HUD/status. Returns hivemind lane summary, attention counts, ready work, claim previews, latest note, and next_action without observation bodies.',
     {
       session_id: z.string().min(1),
       agent: z.string().min(1),
@@ -165,15 +195,19 @@ function buildBridgeStatus(input: {
   const activeLane = selectActiveLane(input.context.lanes, input.branch);
   const task = resolveBridgeTask(input);
   const latestWorkingNote = task ? latestNote(input.store, task.id) : null;
-  const claimedFiles = task ? taskClaims(input.store, task.id, input.sessionId) : [];
+  const claimSummary = task
+    ? taskClaimSummary(input.store, task.id, input.sessionId)
+    : { count: 0, preview: [] };
   const nextAction = nextBridgeAction(input.context, input.ready, activeLane);
   return {
     schema: 'colony.omx_hud_status.v1',
     generated_at: input.context.generated_at,
     runtime_source: input.runtimeSource,
+    hivemind: compactHivemind(input.context),
     branch: task?.branch ?? activeLane?.branch ?? input.branch ?? null,
     task: task?.title ?? activeLane?.task ?? null,
     blocker: bridgeBlocker(input.context, activeLane),
+    next_action: nextAction,
     next: nextAction,
     evidence: {
       task_id: task?.id ?? null,
@@ -190,10 +224,34 @@ function buildBridgeStatus(input: {
       pending_wake_count: input.context.attention.pending_wakes,
       stalled_lane_count: input.context.attention.stalled_lanes,
     },
+    attention_counts: input.context.attention.counts,
     ready_work_count: input.readyCount,
     ready_work_preview: input.ready.slice(0, BRIDGE_READY_LIMIT).map(compactReadyItem),
-    claimed_files: claimedFiles,
+    claimed_file_count: claimSummary.count,
+    claimed_file_preview: claimSummary.preview,
+    claimed_files: claimSummary.preview,
     latest_working_note: latestWorkingNote,
+  };
+}
+
+function compactHivemind(context: HivemindContext): BridgeStatus['hivemind'] {
+  return {
+    lane_count: context.summary.lane_count,
+    total_lane_count: context.summary.total_lane_count,
+    lanes_truncated: context.summary.lanes_truncated,
+    needs_attention_count: context.summary.needs_attention_count,
+    counts: context.counts,
+    lane_preview: context.lanes.slice(0, BRIDGE_LANE_PREVIEW_LIMIT).map((lane) => ({
+      branch: lane.branch,
+      task: lane.task,
+      owner: lane.owner,
+      activity: lane.activity,
+      needs_attention: lane.needs_attention,
+      risk: lane.risk,
+      source: lane.source,
+      locked_file_count: lane.locked_file_count,
+      locked_file_preview: lane.locked_file_preview.slice(0, BRIDGE_PREVIEW_LIMIT),
+    })),
   };
 }
 
@@ -249,22 +307,24 @@ function taskByBranch(store: MemoryStore, repoRoot: string, branch: string): Tas
   return store.storage.findTaskByBranch(repoRoot, branch) ?? null;
 }
 
-function taskClaims(
+function taskClaimSummary(
   store: MemoryStore,
   taskId: number,
   sessionId: string,
-): BridgeStatus['claimed_files'] {
-  return store.storage
+): { count: number; preview: BridgeStatus['claimed_file_preview'] } {
+  const claims = store.storage
     .listClaims(taskId)
-    .sort((left: TaskClaimRow, right: TaskClaimRow) => right.claimed_at - left.claimed_at)
-    .slice(0, BRIDGE_PREVIEW_LIMIT)
-    .map((claim: TaskClaimRow) => ({
+    .sort((left: TaskClaimRow, right: TaskClaimRow) => right.claimed_at - left.claimed_at);
+  return {
+    count: claims.length,
+    preview: claims.slice(0, BRIDGE_PREVIEW_LIMIT).map((claim: TaskClaimRow) => ({
       task_id: claim.task_id,
       file_path: claim.file_path,
       by_session_id: claim.session_id,
       claimed_at: claim.claimed_at,
       yours: claim.session_id === sessionId,
-    }));
+    })),
+  };
 }
 
 function latestNote(store: MemoryStore, taskId: number): BridgeStatus['latest_working_note'] {
