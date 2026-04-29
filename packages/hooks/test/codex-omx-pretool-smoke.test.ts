@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSettings } from '@colony/config';
-import { MemoryStore, TaskThread } from '@colony/core';
+import { MemoryStore, TaskThread, detectRepoBranch } from '@colony/core';
 import type { ClaimBeforeEditStats, ObservationRow } from '@colony/storage';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runOmxLifecycleEnvelope } from '../src/lifecycle-envelope.js';
@@ -14,7 +14,7 @@ const FILE_PATH = 'src/bridge-target.ts';
 const SESSION_ID = 'codex@fresh-pretool-smoke';
 const HEALTH_WINDOW_MS = 24 * 60 * 60 * 1000;
 const BRIDGE_FAILURE_HINT =
-  'Codex/OMX pre-tool smoke failed: check installer/bridge wiring for Codex PreToolUse -> OMX lifecycle -> Colony pre-tool-use hook.';
+  'Codex/OMX pre-tool smoke failed: check colony install --ide codex and colony bridge lifecycle pre_tool_use wiring before file mutation.';
 
 let dir: string;
 let repoRoot: string;
@@ -25,7 +25,7 @@ describe('Codex/OMX pre_tool_use smoke', () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_TS);
     dir = mkdtempSync(join(tmpdir(), 'colony-codex-omx-pretool-smoke-'));
-    repoRoot = fakeGitRepo('repo', BRANCH);
+    repoRoot = tempGitRepo('repo', BRANCH);
     store = new MemoryStore({ dbPath: join(dir, 'state', 'colony.db'), settings: defaultSettings });
   });
 
@@ -65,7 +65,9 @@ describe('Codex/OMX pre_tool_use smoke', () => {
       metadata: { source: 'manual-smoke' },
     });
 
-    const absoluteToolPath = join(repoRoot, 'src', '..', 'src', 'bridge-target.ts');
+    const absoluteToolPath = join(repoRoot, FILE_PATH);
+    expectGitRepo(repoRoot, BRANCH);
+    expect(existsSync(absoluteToolPath), BRIDGE_FAILURE_HINT).toBe(true);
     expect(readFileSync(join(repoRoot, FILE_PATH), 'utf8')).toBe('export const before = 1;\n');
 
     await emitLifecycle(100, editEnvelope('evt_smoke_pre', 'pre_tool_use', absoluteToolPath));
@@ -117,7 +119,7 @@ describe('Codex/OMX pre_tool_use smoke', () => {
       tool: 'Edit',
       file_path: FILE_PATH,
     });
-    expect(manualClaim?.ts).toBeLessThan(editObservation?.ts ?? 0);
+    expect(manualClaim?.ts, BRIDGE_FAILURE_HINT).toBeLessThan(editObservation?.ts ?? 0);
     expect(preToolSignal?.ts).toBeLessThanOrEqual(editObservation?.ts ?? 0);
 
     const shortWindowStats = store.storage.claimBeforeEditStats(BASE_TS + 50);
@@ -174,13 +176,18 @@ function editEnvelope(
   };
 }
 
-function fakeGitRepo(name: string, branch: string): string {
+function tempGitRepo(name: string, branch: string): string {
   const repo = join(dir, name);
   mkdirSync(repo, { recursive: true });
-  execFileSync('git', ['init', '-b', branch, repo], { stdio: 'ignore' });
+  execFileSync('git', ['init', '--quiet', '-b', branch, repo], { stdio: 'ignore' });
   mkdirSync(join(repo, 'src'), { recursive: true });
   writeFileSync(join(repo, FILE_PATH), 'export const before = 1;\n', 'utf8');
   return repo;
+}
+
+function expectGitRepo(repo: string, branch: string): void {
+  expect(existsSync(join(repo, '.git'))).toBe(true);
+  expect(detectRepoBranch(repo)).toEqual({ repo_root: repo, branch });
 }
 
 function taskLifecycleEvents(taskId: number): Array<Record<string, unknown> & { id: number }> {
