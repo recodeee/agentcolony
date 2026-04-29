@@ -838,12 +838,21 @@ export function registerHealthCommand(program: Command): void {
     .command('health')
     .description('Show Colony adoption ratios from local DB evidence')
     .option('--hours <n>', 'Window size in hours', String(DEFAULT_HOURS))
-    .option('--repo-root <path>', 'repo root for fix-plan sweep commands (defaults to process.cwd())')
+    .option(
+      '--repo-root <path>',
+      'repo root for fix-plan sweep commands (defaults to process.cwd())',
+    )
     .option('--json', 'emit structured JSON')
     .option('--prompts', 'emit compact Codex prompt snippets for next fixes')
     .option('--verbose', 'show lower-priority health follow-ups in next fixes')
-    .option('--fix-plan', 'print an execution-safety recovery plan instead of the full health report')
-    .option('--apply', 'with --fix-plan, run coordination and queen sweeps; never releases claims or installs hooks')
+    .option(
+      '--fix-plan',
+      'print an execution-safety recovery plan instead of the full health report',
+    )
+    .option(
+      '--apply',
+      'with --fix-plan, run coordination and queen sweeps; never releases claims or installs hooks',
+    )
     .action(
       async (opts: {
         hours: string;
