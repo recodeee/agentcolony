@@ -1,6 +1,7 @@
 const GIT_OPS = new Set(['checkout', 'switch', 'merge', 'rebase', 'reset']);
 const FILE_OPS = new Set(['mv', 'rm', 'cp']);
 const REDIRECT_OPS = new Set(['>', '>>']);
+type FileOp = 'mv' | 'rm' | 'cp' | 'sed';
 
 export type BashCoordinationEvent =
   | {
@@ -11,7 +12,7 @@ export type BashCoordinationEvent =
     }
   | {
       kind: 'file-op';
-      op: 'mv' | 'rm' | 'cp';
+      op: FileOp;
       argv: string[];
       file_paths: string[];
       segment: string;
@@ -54,6 +55,9 @@ function parseCommandEvent(argv: string[], segment: string): BashCoordinationEve
   const gitEvent = parseGitEvent(argv, segment);
   if (gitEvent) return gitEvent;
 
+  const sedEvent = parseSedEvent(argv, segment);
+  if (sedEvent) return sedEvent;
+
   const fileEvent = parseFileEvent(argv, segment);
   if (fileEvent) return fileEvent;
 
@@ -91,6 +95,66 @@ function parseFileEvent(argv: string[], segment: string): BashCoordinationEvent 
   if (filePaths.length === 0) return undefined;
 
   return { kind: 'file-op', op, argv, file_paths: filePaths, segment };
+}
+
+function parseSedEvent(argv: string[], segment: string): BashCoordinationEvent | undefined {
+  if (commandName(argv[0] ?? '') !== 'sed') return undefined;
+  const filePaths = sedInPlaceTargets(argv.slice(1));
+  if (filePaths.length === 0) return undefined;
+  return { kind: 'file-op', op: 'sed', argv, file_paths: filePaths, segment };
+}
+
+function sedInPlaceTargets(args: string[]): string[] {
+  let inPlace = false;
+  let expressionSeen = false;
+  let parsingOptions = true;
+  const files: string[] = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? '';
+
+    if (parsingOptions && arg === '--') {
+      parsingOptions = false;
+      continue;
+    }
+    if (parsingOptions && (arg === '-i' || arg === '--in-place')) {
+      inPlace = true;
+      continue;
+    }
+    if (parsingOptions && (arg.startsWith('-i') || arg.startsWith('--in-place='))) {
+      inPlace = true;
+      continue;
+    }
+    if (parsingOptions && (arg === '-e' || arg === '--expression')) {
+      i += 1;
+      expressionSeen = true;
+      continue;
+    }
+    if (parsingOptions && (arg.startsWith('-e') || arg.startsWith('--expression='))) {
+      expressionSeen = true;
+      continue;
+    }
+    if (parsingOptions && (arg === '-f' || arg === '--file')) {
+      i += 1;
+      expressionSeen = true;
+      continue;
+    }
+    if (parsingOptions && (arg.startsWith('-f') || arg.startsWith('--file='))) {
+      expressionSeen = true;
+      continue;
+    }
+    if (parsingOptions && arg.startsWith('-')) continue;
+
+    if (!expressionSeen) {
+      expressionSeen = true;
+      continue;
+    }
+
+    const filePath = parseFilePath(arg);
+    if (filePath) files.push(filePath);
+  }
+
+  return inPlace ? unique(files) : [];
 }
 
 function parseRedirectEvents(tokens: Token[], segment: string): BashCoordinationEvent[] {

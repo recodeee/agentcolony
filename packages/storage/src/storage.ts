@@ -2633,6 +2633,7 @@ function extractHeatFilePaths(meta: JsonRecord): string[] {
   const out = new Set<string>();
   for (const key of [
     'file_path',
+    'extracted_paths',
     'file_paths',
     'file_scope',
     'transferred_files',

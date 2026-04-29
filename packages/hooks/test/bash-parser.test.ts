@@ -94,6 +94,21 @@ describe('parseBashCoordinationEvents', () => {
       expected: [{ kind: 'file-op', op: 'rm', file_paths: ['tmp/cache'] }],
     },
     {
+      name: 'sed in-place target',
+      command: "sed -i 's/old/new/' src/app.ts",
+      expected: [{ kind: 'file-op', op: 'sed', file_paths: ['src/app.ts'] }],
+    },
+    {
+      name: 'sed in-place with expression flag and multiple targets',
+      command: "sed -i.bak -e 's/old/new/' src/a.ts src/b.ts",
+      expected: [{ kind: 'file-op', op: 'sed', file_paths: ['src/a.ts', 'src/b.ts'] }],
+    },
+    {
+      name: 'sed without in-place is read-only',
+      command: "sed 's/old/new/' src/app.ts",
+      expected: [],
+    },
+    {
       name: 'stdout redirect',
       command: 'echo hi > out.txt',
       expected: [{ kind: 'auto-claim', operator: '>', file_path: 'out.txt' }],

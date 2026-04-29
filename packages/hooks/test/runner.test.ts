@@ -158,7 +158,7 @@ describe('runHook', () => {
     const tl = store.timeline('sess-bash');
     expect(tl.filter((obs) => obs.kind === 'git-op')).toHaveLength(1);
     expect(tl.filter((obs) => obs.kind === 'file-op')).toHaveLength(1);
-    expect(tl.filter((obs) => obs.kind === 'auto-claim')).toHaveLength(1);
+    expect(tl.filter((obs) => obs.kind === 'auto-claim')).toHaveLength(2);
     expect(tl.find((obs) => obs.kind === 'git-op')?.metadata).toMatchObject({
       op: 'checkout',
       source: 'bash-parser',
@@ -168,11 +168,20 @@ describe('runHook', () => {
       file_path: 'old.ts',
       source: 'bash-parser',
     });
-    expect(tl.find((obs) => obs.kind === 'auto-claim')?.metadata).toMatchObject({
-      file_path: 'log.txt',
-      source: 'post-tool-use',
-      tool: 'Write',
-    });
+    expect(tl.filter((obs) => obs.kind === 'auto-claim').map((obs) => obs.metadata)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          file_path: 'old.ts',
+          source: 'post-tool-use',
+          tool: 'Bash',
+        }),
+        expect.objectContaining({
+          file_path: 'log.txt',
+          source: 'post-tool-use',
+          tool: 'Write',
+        }),
+      ]),
+    );
   });
 
   it('stop stores a turn summary; session-end rolls up turns and closes the session', async () => {
@@ -365,7 +374,11 @@ describe('runHook', () => {
     // Edit + file_path: the handler now records the touched file path in
     // metadata so observe/debrief can correlate edits with claims without
     // re-parsing the content field.
-    expect(toolUse?.metadata).toEqual({ tool: 'Edit', file_path: '/tmp/x.txt' });
+    expect(toolUse?.metadata).toEqual({
+      tool: 'Edit',
+      file_path: '/tmp/x.txt',
+      extracted_paths: ['/tmp/x.txt'],
+    });
     expect(toolUse?.content).toContain('Edit');
     expect(autoClaim?.metadata).toMatchObject({
       source: 'post-tool-use',

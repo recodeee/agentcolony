@@ -1402,20 +1402,19 @@ export class TaskThread {
     since: number,
   ): RelayMetadata['resumable_state'] {
     const recent = this.store.storage.taskObservationsSince(this.task_id, since, 100);
-    // PostToolUse writes kind='tool_use' with metadata.file_path holding
-    // the touched path (single string, not nested under tool_input). We
-    // read directly off the metadata field rather than the compressed
-    // content body — fast, exact, and survives compression.
+    // PostToolUse writes kind='tool_use' with metadata.extracted_paths
+    // holding the touched paths. Keep the legacy metadata.file_path fallback
+    // so older telemetry still contributes to relay state.
     const last_files_edited = recent
       .filter((o) => o.session_id === sender_session_id && o.kind === 'tool_use')
-      .map((o) => {
+      .flatMap((o) => {
         const m = parseObservationMetadata(o.metadata);
-        const file_path = m.file_path;
-        return typeof file_path === 'string' && file_path.length > 0
-          ? { file_path, ts: o.ts, session_id: o.session_id }
-          : null;
+        return extractedFilePaths(m).map((file_path) => ({
+          file_path,
+          ts: o.ts,
+          session_id: o.session_id,
+        }));
       })
-      .filter((x): x is { file_path: string; ts: number; session_id: string } => x !== null)
       .slice(-8);
 
     const now = Date.now();
@@ -1635,6 +1634,20 @@ function parseObservationMetadata(raw: string | null): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function extractedFilePaths(metadata: Record<string, unknown>): string[] {
+  const out = new Set<string>();
+  for (const key of ['extracted_paths', 'file_path']) {
+    const value = metadata[key];
+    if (typeof value === 'string' && value.trim()) out.add(value.trim());
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (typeof entry === 'string' && entry.trim()) out.add(entry.trim());
+      }
+    }
+  }
+  return Array.from(out);
 }
 
 function synthesizeRelayRecipe(

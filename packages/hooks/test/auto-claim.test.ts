@@ -72,9 +72,51 @@ describe('extractTouchedFiles', () => {
     expect(extractTouchedFiles('NotebookEdit', { file_path: 'nb.ipynb' })).toEqual(['nb.ipynb']);
   });
 
+  it('returns all file paths from path arrays and lifecycle path refs', () => {
+    expect(
+      extractTouchedFiles('MultiEdit', {
+        file_paths: ['src/a.ts', 'src/b.ts', '/dev/null'],
+      }),
+    ).toEqual(['src/a.ts', 'src/b.ts']);
+    expect(
+      extractTouchedFiles('Write', {
+        paths: [
+          { path: '/dev/null', role: 'source', kind: 'pseudo', pseudo: 'dev_null' },
+          { path: 'src/out.ts', role: 'target', kind: 'file' },
+        ],
+      }),
+    ).toEqual(['src/out.ts']);
+  });
+
+  it('extracts Bash command write targets', () => {
+    expect(
+      extractTouchedFiles(
+        'Bash',
+        { command: "sed -i 's/old/new/' src/app.ts" },
+        { cwd: '/repo', repoRoot: '/repo' },
+      ),
+    ).toEqual(['src/app.ts']);
+    expect(
+      extractTouchedFiles(
+        'Bash',
+        { command: 'cat src/template.ts > packages/hooks/src/generated.ts' },
+        { cwd: '/repo', repoRoot: '/repo' },
+      ),
+    ).toEqual(['packages/hooks/src/generated.ts']);
+  });
+
+  it('extracts apply_patch target paths', () => {
+    expect(
+      extractTouchedFiles('apply_patch', {
+        command:
+          '*** Begin Patch\n*** Update File: src/a.ts\n*** Move to: src/b.ts\n*** Add File: src/c.ts\n*** End Patch\n',
+      }),
+    ).toEqual(['src/a.ts', 'src/b.ts', 'src/c.ts']);
+  });
+
   it('ignores non-write tools and malformed input', () => {
     expect(extractTouchedFiles('Read', { file_path: 'src/x.ts' })).toEqual([]);
-    expect(extractTouchedFiles('Bash', { command: 'rm foo' })).toEqual([]);
+    expect(extractTouchedFiles('Bash', { command: 'git status --short' })).toEqual([]);
     expect(extractTouchedFiles('Edit', null)).toEqual([]);
     expect(extractTouchedFiles('Edit', {})).toEqual([]);
     expect(extractTouchedFiles('Edit', { file_path: '' })).toEqual([]);
@@ -1013,6 +1055,12 @@ describe('runHook integration: A edits -> B sees warning', () => {
     expect(store.storage.getClaim(task_id, 'packages/hooks/src/generated.ts')?.session_id).toBe(
       'A',
     );
+    const toolUse = store.timeline('A').find((row) => row.kind === 'tool_use');
+    expect(metadataOf(toolUse)).toMatchObject({
+      tool: 'Bash',
+      file_path: 'packages/hooks/src/generated.ts',
+      extracted_paths: ['packages/hooks/src/generated.ts'],
+    });
     const autoClaims = store.storage.taskObservationsByKind(task_id, 'auto-claim');
     expect(autoClaims).toHaveLength(1);
     expect(metadataOf(autoClaims[0])).toMatchObject({
@@ -1049,5 +1097,40 @@ describe('runHook integration: A edits -> B sees warning', () => {
     expect(bash.ok).toBe(true);
     expect(store.storage.getClaim(task_id, '/dev/null')).toBeUndefined();
     expect(store.storage.taskObservationsByKind(task_id, 'auto-claim')).toHaveLength(0);
+  });
+
+  it('stores extracted paths and auto-claims every apply_patch target', async () => {
+    const task_id = seedTwoSessionTask();
+
+    const patch = await runHook(
+      'post-tool-use',
+      {
+        session_id: 'A',
+        ide: 'codex',
+        cwd: '/repo',
+        tool_name: 'apply_patch',
+        tool_input: {
+          command:
+            '*** Begin Patch\n*** Update File: packages/hooks/src/a.ts\n*** Move to: packages/hooks/src/b.ts\n*** Add File: packages/hooks/src/c.ts\n*** End Patch\n',
+        },
+        tool_response: { success: true },
+      },
+      { store },
+    );
+
+    expect(patch.ok).toBe(true);
+    expect(store.storage.getClaim(task_id, 'packages/hooks/src/a.ts')?.session_id).toBe('A');
+    expect(store.storage.getClaim(task_id, 'packages/hooks/src/b.ts')?.session_id).toBe('A');
+    expect(store.storage.getClaim(task_id, 'packages/hooks/src/c.ts')?.session_id).toBe('A');
+    const toolUse = store.timeline('A').find((row) => row.kind === 'tool_use');
+    expect(metadataOf(toolUse)).toMatchObject({
+      tool: 'apply_patch',
+      file_path: 'packages/hooks/src/a.ts',
+      extracted_paths: [
+        'packages/hooks/src/a.ts',
+        'packages/hooks/src/b.ts',
+        'packages/hooks/src/c.ts',
+      ],
+    });
   });
 });

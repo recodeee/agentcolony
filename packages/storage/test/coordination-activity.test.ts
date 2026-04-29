@@ -97,6 +97,7 @@ describe('tool classification', () => {
     expect(classifyTool('mcp__colony__task_note_working')).toBe('commit');
     expect(classifyTool('mcp__colony__hivemind_context')).toBe('read');
     expect(classifyTool('Edit')).toBe('edit');
+    expect(classifyTool('apply_patch')).toBe('edit');
     expect(classifyTool('made_up')).toBe('other');
   });
 });

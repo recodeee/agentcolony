@@ -8,19 +8,25 @@ import type { HookInput } from '../types.js';
 /**
  * Tool names whose `file_path` input indicates "this agent just edited that
  * file". Conservative on purpose — `Read` and `Glob` aren't claim-worthy
- * because they don't mutate. `Bash` redirects are handled separately through
- * parseBashCoordinationEvents so ordinary Write/Edit handling stays simple.
+ * because they don't mutate. `Bash` writes and patch tools have dedicated
+ * extractors because their target path may be inside command text.
  */
 const WRITE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
+const PATCH_TOOLS = new Set(['apply_patch', 'ApplyPatch', 'Patch']);
 const PSEUDO_HOOK_FILE_PATHS = new Set([
   '/dev/null',
+  'dev/null',
   '/dev/stdin',
+  'dev/stdin',
   '/dev/stdout',
+  'dev/stdout',
   '/dev/stderr',
+  'dev/stderr',
   'NUL',
 ]);
 
 type BashPathContext = { cwd?: string | undefined; repoRoot?: string | undefined };
+type PathRef = { path: string; role?: string; kind?: string };
 
 export async function postToolUse(store: MemoryStore, input: HookInput): Promise<void> {
   const tool = input.tool_name ?? input.tool ?? 'unknown';
@@ -38,9 +44,13 @@ export async function postToolUse(store: MemoryStore, input: HookInput): Promise
   // at write time, expensive to recover at query time. The `observe` and
   // `debrief` commands both depend on this surface for edit-vs-claim
   // diagnostics, so we pay the tiny write cost unconditionally.
-  const touchedFiles = extractTouchedFiles(tool, toolInput);
+  const pathContext = pathContextForToolUse(store, input);
+  const touchedFiles = extractTouchedFiles(tool, toolInput, pathContext);
   const metadata: Record<string, unknown> = { tool };
-  if (touchedFiles.length > 0) metadata.file_path = touchedFiles[0];
+  if (touchedFiles.length > 0) {
+    metadata.file_path = touchedFiles[0];
+    metadata.extracted_paths = touchedFiles;
+  }
 
   store.addObservation({
     session_id: input.session_id,
@@ -95,13 +105,19 @@ function extractBashCoordinationEvents(
   const command = (toolInput as Record<string, unknown>).command;
   if (typeof command !== 'string') return [];
 
+  return normalizeBashEventPaths(parseBashCoordinationEvents(command), {
+    ...pathContextForToolUse(store, input),
+  });
+}
+
+function pathContextForToolUse(store: MemoryStore, input: Pick<HookInput, 'session_id' | 'cwd'>) {
   const taskId = store.storage.findActiveTaskForSession(input.session_id);
   const task = taskId === undefined ? undefined : store.storage.getTask(taskId);
   const detected = task ? null : input.cwd ? detectRepoBranch(input.cwd) : null;
-  return normalizeBashEventPaths(parseBashCoordinationEvents(command), {
+  return {
     cwd: input.cwd,
     repoRoot: task?.repo_root ?? detected?.repo_root ?? input.cwd,
-  });
+  };
 }
 
 function normalizeBashEventPaths(
@@ -167,6 +183,7 @@ function applyBashRedirectAutoClaims(
   input: HookInput,
   events: BashCoordinationEvent[],
 ): void {
+  const pathContext = pathContextForToolUse(store, input);
   const files = Array.from(
     new Set(events.flatMap((event) => (event.kind === 'auto-claim' ? [event.file_path] : []))),
   );
@@ -180,7 +197,8 @@ function applyBashRedirectAutoClaims(
       tool_input: { file_path },
     };
     if (typeof input.ide === 'string') syntheticWrite.ide = input.ide;
-    if (typeof input.cwd === 'string') syntheticWrite.cwd = input.cwd;
+    if (pathContext.repoRoot) syntheticWrite.cwd = pathContext.repoRoot;
+    else if (typeof input.cwd === 'string') syntheticWrite.cwd = input.cwd;
     autoClaimFromToolUse(store, syntheticWrite);
     depositPheromoneFromToolUse(store, syntheticWrite);
     reinforceAdjacentProposals(store, syntheticWrite);
@@ -239,20 +257,134 @@ function isPseudoHookFilePath(value: string): boolean {
   return PSEUDO_HOOK_FILE_PATHS.has(normalized);
 }
 
+function extractBashTouchedFiles(toolInput: unknown, context: BashPathContext): string[] {
+  if (typeof toolInput !== 'object' || toolInput === null) return [];
+  const command = (toolInput as Record<string, unknown>).command;
+  if (typeof command !== 'string') return [];
+  const events = normalizeBashEventPaths(parseBashCoordinationEvents(command), context);
+  return unique(
+    events.flatMap((event) => {
+      if (event.kind === 'file-op') return event.file_paths;
+      if (event.kind === 'auto-claim') return [event.file_path];
+      return [];
+    }),
+  );
+}
+
+function extractToolInputFilePaths(input: Record<string, unknown>): string[] {
+  const out: string[] = [];
+  if (typeof input.file_path === 'string') out.push(input.file_path);
+  if (Array.isArray(input.file_paths)) {
+    for (const filePath of input.file_paths) {
+      if (typeof filePath === 'string') out.push(filePath);
+    }
+  }
+
+  const pathRefs = Array.isArray(input.paths) ? input.paths.filter(isPathRef) : [];
+  const claimableRefs = pathRefs.filter((ref) => {
+    if (ref.kind === 'pseudo') return false;
+    if (ref.kind !== undefined && ref.kind !== 'file') return false;
+    return (
+      ref.role === undefined ||
+      ref.role === 'target' ||
+      ref.role === 'destination' ||
+      ref.role === 'output' ||
+      ref.role === 'unknown'
+    );
+  });
+  const selectedRefs =
+    claimableRefs.length > 0
+      ? claimableRefs
+      : pathRefs.filter((ref) => ref.kind === undefined || ref.kind === 'file');
+  for (const ref of selectedRefs) out.push(ref.path);
+
+  return out;
+}
+
+function extractApplyPatchFilePaths(toolInput: unknown): string[] {
+  const paths: string[] = [];
+  if (typeof toolInput === 'object' && toolInput !== null) {
+    paths.push(...extractToolInputFilePaths(toolInput as Record<string, unknown>));
+  }
+  const patchText = applyPatchText(toolInput);
+  if (!patchText) return paths;
+
+  for (const line of patchText.split(/\r?\n/)) {
+    const pathFromHeader = applyPatchHeaderPath(line);
+    if (pathFromHeader) paths.push(pathFromHeader);
+  }
+
+  return paths;
+}
+
+function applyPatchText(toolInput: unknown): string | undefined {
+  if (typeof toolInput === 'string') return toolInput;
+  if (typeof toolInput !== 'object' || toolInput === null) return undefined;
+  const input = toolInput as Record<string, unknown>;
+  for (const key of ['command', 'patch', 'input']) {
+    const value = input[key];
+    if (typeof value === 'string') return value;
+  }
+  return undefined;
+}
+
+function applyPatchHeaderPath(line: string): string | undefined {
+  for (const prefix of [
+    '*** Add File: ',
+    '*** Update File: ',
+    '*** Delete File: ',
+    '*** Move to: ',
+  ]) {
+    if (line.startsWith(prefix)) return line.slice(prefix.length).trim();
+  }
+  return undefined;
+}
+
+function normalizeEditorFilePaths(values: string[], context: BashPathContext): string[] {
+  return filterClaimableHookFilePaths(
+    values.map((value) => normalizeEditorFilePath(value, context)),
+  );
+}
+
+function normalizeEditorFilePath(rawPath: string, context: BashPathContext): string {
+  const trimmed = rawPath.trim();
+  if (!trimmed) return '';
+  if (path.isAbsolute(trimmed)) {
+    return normalizeHookFilePath(trimmed, {
+      cwd: context.repoRoot ?? context.cwd,
+      repoRoot: context.repoRoot,
+    });
+  }
+  return normalizeSlashes(path.normalize(trimmed)).replace(/^\.\//, '');
+}
+
+function isPathRef(value: unknown): value is PathRef {
+  if (typeof value !== 'object' || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.path === 'string';
+}
+
 /**
  * Extract file paths that a tool call mutated. Returns `[]` when the tool
  * isn't a write tool or the input shape isn't recognisable — silent-skip
  * rather than throw, because PostToolUse runs on every tool call and any
  * error here would degrade every turn.
  */
-export function extractTouchedFiles(toolName: string, toolInput: unknown): string[] {
+export function extractTouchedFiles(
+  toolName: string,
+  toolInput: unknown,
+  context: BashPathContext = {},
+): string[] {
+  if (toolName === 'Bash') {
+    return extractBashTouchedFiles(toolInput, context);
+  }
+  if (PATCH_TOOLS.has(toolName)) {
+    return normalizeEditorFilePaths(extractApplyPatchFilePaths(toolInput), context);
+  }
   if (!WRITE_TOOLS.has(toolName)) return [];
   if (typeof toolInput !== 'object' || toolInput === null) return [];
   const input = toolInput as Record<string, unknown>;
-  if (typeof input.file_path === 'string' && input.file_path.length > 0) {
-    return filterClaimableHookFilePaths([input.file_path]);
-  }
-  return [];
+  return normalizeEditorFilePaths(extractToolInputFilePaths(input), context);
 }
 
 /**
@@ -270,7 +402,11 @@ export function autoClaimFromToolUse(
   input: Pick<HookInput, 'session_id' | 'tool_name' | 'tool' | 'tool_input' | 'ide' | 'cwd'>,
 ): { claimed: string[]; conflicts: Array<{ file_path: string; other_session: string }> } {
   const toolName = input.tool_name ?? input.tool ?? '';
-  const files = extractTouchedFiles(toolName, input.tool_input);
+  const files = extractTouchedFiles(
+    toolName,
+    input.tool_input,
+    pathContextForToolUse(store, input),
+  );
   if (files.length === 0) return { claimed: [], conflicts: [] };
 
   const claimed: string[] = [];
@@ -350,10 +486,14 @@ function activeTaskCandidateForToolUse(
  */
 export function depositPheromoneFromToolUse(
   store: MemoryStore,
-  input: Pick<HookInput, 'session_id' | 'tool_name' | 'tool' | 'tool_input'>,
+  input: Pick<HookInput, 'session_id' | 'tool_name' | 'tool' | 'tool_input' | 'cwd'>,
 ): { deposited: string[] } {
   const toolName = input.tool_name ?? input.tool ?? '';
-  const files = extractTouchedFiles(toolName, input.tool_input);
+  const files = extractTouchedFiles(
+    toolName,
+    input.tool_input,
+    pathContextForToolUse(store, input),
+  );
   if (files.length === 0) return { deposited: [] };
 
   const task_id = store.storage.findActiveTaskForSession(input.session_id);
@@ -376,10 +516,14 @@ export function depositPheromoneFromToolUse(
  */
 export function reinforceAdjacentProposals(
   store: MemoryStore,
-  input: Pick<HookInput, 'session_id' | 'tool_name' | 'tool' | 'tool_input'>,
+  input: Pick<HookInput, 'session_id' | 'tool_name' | 'tool' | 'tool_input' | 'cwd'>,
 ): { reinforced: number[] } {
   const toolName = input.tool_name ?? input.tool ?? '';
-  const files = extractTouchedFiles(toolName, input.tool_input);
+  const files = extractTouchedFiles(
+    toolName,
+    input.tool_input,
+    pathContextForToolUse(store, input),
+  );
   if (files.length === 0) return { reinforced: [] };
 
   const task_id = store.storage.findActiveTaskForSession(input.session_id);
