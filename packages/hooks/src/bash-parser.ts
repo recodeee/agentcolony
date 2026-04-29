@@ -11,7 +11,7 @@ export type BashCoordinationEvent =
     }
   | {
       kind: 'file-op';
-      op: 'mv' | 'rm' | 'cp';
+      op: 'mv' | 'rm' | 'cp' | 'sed';
       argv: string[];
       file_paths: string[];
       segment: string;
@@ -57,6 +57,9 @@ function parseCommandEvent(argv: string[], segment: string): BashCoordinationEve
   const fileEvent = parseFileEvent(argv, segment);
   if (fileEvent) return fileEvent;
 
+  const sedEvent = parseSedEvent(argv, segment);
+  if (sedEvent) return sedEvent;
+
   return undefined;
 }
 
@@ -91,6 +94,74 @@ function parseFileEvent(argv: string[], segment: string): BashCoordinationEvent 
   if (filePaths.length === 0) return undefined;
 
   return { kind: 'file-op', op, argv, file_paths: filePaths, segment };
+}
+
+function parseSedEvent(argv: string[], segment: string): BashCoordinationEvent | undefined {
+  if (commandName(argv[0] ?? '') !== 'sed') return undefined;
+  if (!hasSedInPlaceOption(argv.slice(1))) return undefined;
+
+  const filePaths = unique(
+    sedEditedFileArgs(argv.slice(1))
+      .map((arg) => parseFilePath(arg))
+      .filter((filePath): filePath is string => filePath !== undefined),
+  );
+  if (filePaths.length === 0) return undefined;
+
+  return { kind: 'file-op', op: 'sed', argv, file_paths: filePaths, segment };
+}
+
+function hasSedInPlaceOption(args: string[]): boolean {
+  return args.some((arg) => isSedInPlaceOption(arg));
+}
+
+function sedEditedFileArgs(args: string[]): string[] {
+  const candidates: string[] = [];
+  let scriptFromOption = false;
+  let parsingOptions = true;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? '';
+    if (parsingOptions && arg === '--') {
+      parsingOptions = false;
+      continue;
+    }
+    if (parsingOptions && isSedOptionWithSeparateValue(arg)) {
+      scriptFromOption = true;
+      i += 1;
+      continue;
+    }
+    if (parsingOptions && isSedScriptOptionWithAttachedValue(arg)) {
+      scriptFromOption = true;
+      continue;
+    }
+    if (parsingOptions && isSedInPlaceOption(arg)) continue;
+    if (parsingOptions && arg.startsWith('-')) continue;
+    candidates.push(arg);
+  }
+
+  return scriptFromOption ? candidates : candidates.slice(1);
+}
+
+function isSedInPlaceOption(arg: string): boolean {
+  return (
+    arg === '-i' ||
+    (arg.startsWith('-i') && !arg.startsWith('--')) ||
+    arg === '--in-place' ||
+    arg.startsWith('--in-place=')
+  );
+}
+
+function isSedOptionWithSeparateValue(arg: string): boolean {
+  return arg === '-e' || arg === '--expression' || arg === '-f' || arg === '--file';
+}
+
+function isSedScriptOptionWithAttachedValue(arg: string): boolean {
+  return (
+    (arg.startsWith('-e') && arg.length > 2) ||
+    arg.startsWith('--expression=') ||
+    (arg.startsWith('-f') && arg.length > 2) ||
+    arg.startsWith('--file=')
+  );
 }
 
 function parseRedirectEvents(tokens: Token[], segment: string): BashCoordinationEvent[] {
