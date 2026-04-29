@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  type ClaimBeforeEditStats,
   type ClaimMatchSources,
   type ClaimMissReasons,
   type NearestClaimExample,
@@ -421,6 +422,152 @@ describe('colony health payload', () => {
     expect(text).toContain('session_id_mismatch: 2');
     expect(text).toContain('repo_root_mismatch: 4');
     expect(text).toContain('branch_mismatch: 5');
+  });
+
+  it('explains old bad edit telemetry without blaming the current lifecycle bridge', () => {
+    const recentSince = NOW - 3_600_000;
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: Array.from({ length: 12 }, (_, index) =>
+          call(index + 1, 'codex-old-session', 'mcp__colony__task_claim_file', SINCE + 1_000 + index),
+        ),
+        claimBeforeEdit: badClaimBeforeEditStats(),
+        claimBeforeEditStatsBySince: (since) =>
+          since >= recentSince ? cleanClaimBeforeEditStats() : badClaimBeforeEditStats(),
+      }),
+      { since: SINCE, window_hours: 24, now: NOW, codex_sessions_root: NO_CODEX_ROOT },
+    );
+
+    expect(payload.readiness_summary.execution_safety.status).toBe('bad');
+    expect(payload.task_claim_file_before_edits).toMatchObject({
+      old_telemetry_pollution: true,
+      recent_window_hours: 1,
+      recent_hook_capable_edits: 2,
+      recent_pre_tool_use_missing: 0,
+      recent_pre_tool_use_signals: 2,
+      recent_claim_before_edit_rate: 1,
+    });
+    expect(payload.readiness_summary.execution_safety.root_cause?.summary).toBe(
+      '24h execution_safety is bad because older edit telemetry remains inside the selected window; no fresh bad edits detected recently.',
+    );
+    expect(formatColonyHealthOutput(payload)).not.toContain('Lifecycle bridge missing');
+  });
+
+  it('keeps lifecycle bridge missing when bad edits are fresh', () => {
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: Array.from({ length: 12 }, (_, index) =>
+          call(index + 1, 'codex-fresh-session', 'mcp__colony__task_claim_file', NOW - 60_000 + index),
+        ),
+        claimBeforeEdit: badClaimBeforeEditStats(),
+        claimBeforeEditStatsBySince: () => badClaimBeforeEditStats(),
+      }),
+      { since: SINCE, window_hours: 24, now: NOW, codex_sessions_root: NO_CODEX_ROOT },
+    );
+
+    expect(payload.task_claim_file_before_edits.old_telemetry_pollution).toBe(false);
+    expect(payload.readiness_summary.execution_safety.root_cause).toMatchObject({
+      kind: 'lifecycle_bridge_missing',
+      summary: expect.stringContaining('Lifecycle bridge missing'),
+    });
+    expect(formatColonyHealthOutput(payload)).toContain('root cause: Lifecycle bridge missing');
+  });
+
+  it('marks the recent claim-before-edit rate n/a when there are no recent edits', () => {
+    const recentSince = NOW - 3_600_000;
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: Array.from({ length: 12 }, (_, index) =>
+          call(index + 1, 'codex-old-session', 'mcp__colony__task_claim_file', SINCE + 1_000 + index),
+        ),
+        claimBeforeEdit: badClaimBeforeEditStats(),
+        claimBeforeEditStatsBySince: (since) =>
+          since >= recentSince ? emptyClaimBeforeEditStats() : badClaimBeforeEditStats(),
+      }),
+      { since: SINCE, window_hours: 24, now: NOW, codex_sessions_root: NO_CODEX_ROOT },
+    );
+
+    expect(payload.readiness_summary.execution_safety.status).toBe('bad');
+    expect(payload.task_claim_file_before_edits.old_telemetry_pollution).toBe(true);
+    expect(payload.task_claim_file_before_edits.recent_hook_capable_edits).toBe(0);
+    expect(payload.task_claim_file_before_edits.recent_claim_before_edit_rate).toBeNull();
+    expect(payload.readiness_summary.execution_safety.root_cause?.summary).toBe(
+      '24h execution_safety is bad because older edit telemetry remains inside the selected window; no fresh bad edits detected recently.',
+    );
+    const text = formatColonyHealthOutput(payload);
+    expect(text).toContain('recent 1h: hook_capable_edits=0');
+    expect(text).toContain('claim-before-edit=n/a');
+    expect(text).not.toContain('Lifecycle bridge missing');
+  });
+
+  it('keeps execution safety bad when live contentions still exist', () => {
+    const recentSince = NOW - 3_600_000;
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: Array.from({ length: 12 }, (_, index) =>
+          call(index + 1, 'codex-old-session', 'mcp__colony__task_claim_file', SINCE + 1_000 + index),
+        ),
+        claimBeforeEdit: badClaimBeforeEditStats(),
+        claimBeforeEditStatsBySince: (since) =>
+          since >= recentSince ? cleanClaimBeforeEditStats() : badClaimBeforeEditStats(),
+        tasks: [
+          { id: 1, repo_root: '/repo', branch: 'agent/codex/left' },
+          { id: 2, repo_root: '/repo', branch: 'agent/claude/right' },
+        ],
+        claimsByTask: {
+          1: [
+            {
+              task_id: 1,
+              file_path: 'src/shared.ts',
+              session_id: 'codex-left-session',
+              claimed_at: NOW - 60_000,
+            },
+          ],
+          2: [
+            {
+              task_id: 2,
+              file_path: 'src/shared.ts',
+              session_id: 'claude-right-session',
+              claimed_at: NOW - 60_000,
+            },
+          ],
+        },
+      }),
+      {
+        since: SINCE,
+        window_hours: 24,
+        now: NOW,
+        codex_sessions_root: NO_CODEX_ROOT,
+        repo_root: '/repo',
+        hivemind: {
+          sessions: [
+            hivemindSession({
+              agent: 'codex',
+              branch: 'agent/codex/left',
+              session_key: 'codex-left-session',
+              worktree_path: '/wt/codex-left',
+              activity: 'working',
+            }),
+            hivemindSession({
+              agent: 'claude',
+              branch: 'agent/claude/right',
+              session_key: 'claude-right-session',
+              worktree_path: '/wt/claude-right',
+              activity: 'working',
+            }),
+          ],
+        },
+        dirty_files_by_worktree: {
+          '/wt/codex-left': ['src/shared.ts'],
+          '/wt/claude-right': ['src/shared.ts'],
+        },
+        worktree_contention: fakeWorktreeContention(),
+      },
+    );
+
+    expect(payload.live_contention_health.live_file_contentions).toBe(1);
+    expect(payload.readiness_summary.execution_safety.status).toBe('bad');
+    expect(payload.task_claim_file_before_edits.old_telemetry_pollution).toBe(false);
   });
 
   it('builds a dry-run execution-safety recovery plan without running sweeps', () => {
@@ -2105,6 +2252,7 @@ function fakeStorage(args: {
     session_binding_missing?: number;
     pre_tool_use_signals?: number;
   };
+  claimBeforeEditStatsBySince?: (since: number) => ClaimBeforeEditStats;
   tasks?: TestTask[];
   observationsByTask?: Record<number, TestObservation[]>;
   claimsByTask?: Record<
@@ -2132,7 +2280,7 @@ function fakeStorage(args: {
   const reinforcements = args.reinforcements ?? healthyReinforcements();
   return {
     toolCallsSince: () => args.calls,
-    claimBeforeEditStats: () => args.claimBeforeEdit,
+    claimBeforeEditStats: (since: number) => args.claimBeforeEditStatsBySince?.(since) ?? args.claimBeforeEdit,
     omxRuntimeSummaryStats: () =>
       args.omxRuntimeStats ?? {
         status: 'unavailable',
@@ -2235,6 +2383,45 @@ function healthyWindowCalls(): TestToolCall[] {
 
 function call(id: number, sessionId: string, tool: string, ts: number): TestToolCall {
   return { id, session_id: sessionId, tool, ts };
+}
+
+function badClaimBeforeEditStats(): ClaimBeforeEditStats {
+  return {
+    edit_tool_calls: 12,
+    edits_with_file_path: 12,
+    edits_claimed_before: 0,
+    claim_miss_reasons: {
+      pre_tool_use_missing: 12,
+      no_claim_for_file: 0,
+    },
+    pre_tool_use_signals: 0,
+  };
+}
+
+function cleanClaimBeforeEditStats(): ClaimBeforeEditStats {
+  return {
+    edit_tool_calls: 2,
+    edits_with_file_path: 2,
+    edits_claimed_before: 2,
+    claim_miss_reasons: {
+      pre_tool_use_missing: 0,
+      no_claim_for_file: 0,
+    },
+    pre_tool_use_signals: 2,
+  };
+}
+
+function emptyClaimBeforeEditStats(): ClaimBeforeEditStats {
+  return {
+    edit_tool_calls: 0,
+    edits_with_file_path: 0,
+    edits_claimed_before: 0,
+    claim_miss_reasons: {
+      pre_tool_use_missing: 0,
+      no_claim_for_file: 0,
+    },
+    pre_tool_use_signals: 0,
+  };
 }
 
 function nearestClaimExample(
