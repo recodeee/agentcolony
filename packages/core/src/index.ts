@@ -117,6 +117,7 @@ export {
   type InboxFileHeat,
   type InboxLane,
   type InboxMessage,
+  type InboxPausedLane,
   type InboxRecentClaim,
   type InboxStaleClaimBranch,
   type InboxStaleClaimSignals,

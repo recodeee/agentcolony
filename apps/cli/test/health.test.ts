@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { ClaimMatchSources, ClaimMissReasons, NearestClaimExample } from '@colony/storage';
 import kleur from 'kleur';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildColonyHealthPayload, formatColonyHealthOutput } from '../src/commands/health.js';
@@ -78,6 +79,32 @@ describe('colony health payload', () => {
           edit_tool_calls: 2,
           edits_with_file_path: 2,
           edits_claimed_before: 1,
+          claim_match_window_ms: 300_000,
+          claim_match_sources: {
+            exact_session: 0,
+            repo_branch: 1,
+            worktree: 0,
+            agent_lane: 0,
+          },
+          claim_miss_reasons: {
+            no_claim_for_file: 1,
+            claim_after_edit: 0,
+            session_id_mismatch: 0,
+            repo_root_mismatch: 0,
+            branch_mismatch: 0,
+            path_mismatch: 0,
+            worktree_path_mismatch: 0,
+            pseudo_path_skipped: 0,
+            pre_tool_use_missing: 0,
+          },
+          nearest_claim_examples: [
+            nearestClaimExample({
+              reason: 'no_claim_for_file',
+              edit_id: 9,
+              edit_session_id: 'codex-alpha-session',
+              edit_file_path: 'src/missing.ts',
+            }),
+          ],
         },
       }),
       {
@@ -147,6 +174,30 @@ describe('colony health payload', () => {
       edits_claimed_before: 1,
       edits_without_claim_before: 1,
       claim_before_edit_ratio: 1 / 2,
+      claim_match_window_ms: 300_000,
+      claim_match_sources: {
+        exact_session: 0,
+        repo_branch: 1,
+        worktree: 0,
+        agent_lane: 0,
+      },
+      claim_miss_reasons: {
+        no_claim_for_file: 1,
+        claim_after_edit: 0,
+        session_id_mismatch: 0,
+        repo_root_mismatch: 0,
+        branch_mismatch: 0,
+        path_mismatch: 0,
+        worktree_path_mismatch: 0,
+        pseudo_path_skipped: 0,
+        pre_tool_use_missing: 0,
+      },
+      nearest_claim_examples: [
+        expect.objectContaining({
+          reason: 'no_claim_for_file',
+          edit_file_path: 'src/missing.ts',
+        }),
+      ],
     });
     expect(payload.signal_health).toMatchObject({
       total_claims: 2,
@@ -244,6 +295,15 @@ describe('colony health payload', () => {
     expect(text).toContain('task_post vs OMX notepad');
     expect(text).toContain('Search calls per session');
     expect(text).toContain('1 / 2 edits had a claim before edit (50%)');
+    expect(text).toContain(
+      'claim_match_sources: exact_session=0, repo_branch=1, worktree=0, agent_lane=0, window_ms=300000 (health-only fallback)',
+    );
+    expect(text).toContain('why claims did not match edits:');
+    expect(text).toContain('no_claim_for_file: 1');
+    expect(text).toContain('nearest claim examples:');
+    expect(text).toContain(
+      'no_claim_for_file: edit#9 src/missing.ts by codex-alpha-session; no nearby claim',
+    );
     expect(text).toContain('Signal health');
     expect(text).toContain('Proposal decay/promotions');
     expect(text).toContain('Ready-to-claim vs claimed');
@@ -343,6 +403,8 @@ describe('colony health payload', () => {
     expect(json).toHaveProperty('task_post_vs_omx_notepad');
     expect(json).toHaveProperty('search_calls_per_session');
     expect(json).toHaveProperty('task_claim_file_before_edits');
+    expect(json.task_claim_file_before_edits).toHaveProperty('claim_miss_reasons');
+    expect(json.task_claim_file_before_edits).toHaveProperty('nearest_claim_examples');
     expect(json).toHaveProperty('signal_health');
     expect(json).toHaveProperty('proposal_health');
     expect(json).toHaveProperty('ready_to_claim_vs_claimed');
@@ -351,6 +413,86 @@ describe('colony health payload', () => {
     expect(json).toHaveProperty('action_hints');
     expect(json.action_hints[0]).toHaveProperty('tool_call');
     expect(json.action_hints[0]).toHaveProperty('prompt');
+  });
+
+  it('renders claim miss reasons and nearest claim examples in text and JSON output', () => {
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: healthyWindowCalls(),
+        claimBeforeEdit: {
+          edit_tool_calls: 9,
+          edits_with_file_path: 9,
+          edits_claimed_before: 0,
+          claim_miss_reasons: {
+            no_claim_for_file: 1,
+            claim_after_edit: 1,
+            session_id_mismatch: 1,
+            repo_root_mismatch: 1,
+            branch_mismatch: 1,
+            path_mismatch: 1,
+            worktree_path_mismatch: 1,
+            pseudo_path_skipped: 1,
+            pre_tool_use_missing: 1,
+          },
+          nearest_claim_examples: [
+            nearestClaimExample({
+              reason: 'session_id_mismatch',
+              edit_id: 31,
+              edit_session_id: 'edit-session',
+              edit_file_path: 'src/session.ts',
+              nearest_claim_id: 30,
+              claim_session_id: 'claim-session',
+              claim_file_path: 'src/session.ts',
+              distance_ms: 1_000,
+            }),
+          ],
+        },
+      }),
+      {
+        since: SINCE,
+        window_hours: 24,
+        now: NOW,
+        codex_sessions_root: NO_CODEX_ROOT,
+      },
+    );
+
+    expect(payload.task_claim_file_before_edits.claim_miss_reasons).toMatchObject({
+      no_claim_for_file: 1,
+      claim_after_edit: 1,
+      session_id_mismatch: 1,
+      repo_root_mismatch: 1,
+      branch_mismatch: 1,
+      path_mismatch: 1,
+      worktree_path_mismatch: 1,
+      pseudo_path_skipped: 1,
+      pre_tool_use_missing: 1,
+    });
+    expect(payload.task_claim_file_before_edits.nearest_claim_examples).toContainEqual(
+      expect.objectContaining({
+        reason: 'session_id_mismatch',
+        edit_file_path: 'src/session.ts',
+        claim_file_path: 'src/session.ts',
+      }),
+    );
+
+    const text = formatColonyHealthOutput(payload);
+    expect(text).toContain('why claims did not match edits:');
+    expect(text).toContain('session_id_mismatch: 1');
+    expect(text).toContain('worktree_path_mismatch: 1');
+    expect(text).toContain('nearest claim examples:');
+    expect(text).toContain(
+      'session_id_mismatch: edit#31 src/session.ts by edit-session; claim#30 src/session.ts by claim-session 1000ms away',
+    );
+
+    const json = JSON.parse(formatColonyHealthOutput(payload, { json: true }));
+    expect(json.task_claim_file_before_edits.claim_miss_reasons).toMatchObject({
+      path_mismatch: 1,
+      pre_tool_use_missing: 1,
+    });
+    expect(json.task_claim_file_before_edits.nearest_claim_examples[0]).toMatchObject({
+      reason: 'session_id_mismatch',
+      nearest_claim_id: 30,
+    });
   });
 
   it('reports stale claimed subtasks that block later Queen waves', () => {
@@ -982,6 +1124,10 @@ function fakeStorage(args: {
     edit_tool_calls: number;
     edits_with_file_path: number;
     edits_claimed_before: number;
+    claim_match_window_ms?: number;
+    claim_match_sources?: Partial<ClaimMatchSources>;
+    claim_miss_reasons?: Partial<ClaimMissReasons>;
+    nearest_claim_examples?: NearestClaimExample[];
     auto_claimed_before_edit?: number;
     session_binding_missing?: number;
     pre_tool_use_signals?: number;
@@ -1038,6 +1184,37 @@ function healthyWindowCalls(): TestToolCall[] {
 
 function call(id: number, sessionId: string, tool: string, ts: number): TestToolCall {
   return { id, session_id: sessionId, tool, ts };
+}
+
+function nearestClaimExample(
+  overrides: Partial<NearestClaimExample> & Pick<NearestClaimExample, 'reason'>,
+): NearestClaimExample {
+  return {
+    reason: overrides.reason,
+    edit_id: overrides.edit_id ?? 1,
+    edit_session_id: overrides.edit_session_id ?? 'edit-session',
+    edit_file_path: overrides.edit_file_path ?? 'src/edit.ts',
+    edit_repo_root: overrides.edit_repo_root ?? null,
+    edit_branch: overrides.edit_branch ?? null,
+    edit_worktree_path: overrides.edit_worktree_path ?? null,
+    edit_ts: overrides.edit_ts ?? NOW - 1_000,
+    nearest_claim_id: overrides.nearest_claim_id ?? null,
+    claim_session_id: overrides.claim_session_id ?? null,
+    claim_file_path: overrides.claim_file_path ?? null,
+    claim_repo_root: overrides.claim_repo_root ?? null,
+    claim_branch: overrides.claim_branch ?? null,
+    claim_worktree_path: overrides.claim_worktree_path ?? null,
+    claim_ts: overrides.claim_ts ?? null,
+    distance_ms: overrides.distance_ms ?? null,
+    relation: overrides.relation ?? {
+      same_file_path: false,
+      same_session_id: false,
+      same_repo_root: null,
+      same_branch: null,
+      same_worktree_path: null,
+      claim_before_edit: null,
+    },
+  };
 }
 
 function healthyTasks(): TestTask[] {

@@ -18,6 +18,7 @@ describe('Colony CLI program', () => {
       'hook',
       'inbox',
       'install',
+      'lane',
       'mcp',
       'note',
       'observe',
@@ -51,6 +52,8 @@ describe('Colony CLI program', () => {
 
       Commands:
         install [options]                   Register hooks + MCP server for an IDE
+        lane                                Pause, resume, and take over contended
+                                            lanes
         uninstall [options]                 Remove IDE integration
         status                              Show colony wiring, data, and worker
                                             state

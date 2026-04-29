@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import type { FileHeatRow, TaskClaimRow, TaskRow } from '@colony/storage';
+import type { FileHeatRow, PausedLaneRow, TaskClaimRow, TaskRow } from '@colony/storage';
 import { type ClaimAgeClass, type ClaimOwnershipStrength, classifyClaimAge } from './claim-age.js';
 import {
   type HivemindActivity,
@@ -7,6 +7,10 @@ import {
   type HivemindSession,
   readHivemind,
 } from './hivemind.js';
+import {
+  type LiveFileContentionWarning,
+  liveFileContentionsForSessionClaims,
+} from './live-file-contention.js';
 import type { MemoryStore } from './memory-store.js';
 import {
   type MessageActionSummary,
@@ -20,10 +24,6 @@ import {
   TaskThread,
   type WakeRequestMetadata,
 } from './task-thread.js';
-import {
-  liveFileContentionsForSessionClaims,
-  type LiveFileContentionWarning,
-} from './live-file-contention.js';
 
 /**
  * Pending handoff item reduced to the shape the inbox surfaces: id, sender,
@@ -93,6 +93,18 @@ export interface InboxLane {
   activity_summary: string;
   worktree_path: string;
   updated_at: string;
+}
+
+export interface InboxPausedLane {
+  session_id: string;
+  task_id: number | null;
+  repo_root: string | null;
+  branch: string | null;
+  task: string | null;
+  reason: string | null;
+  paused_at: number;
+  paused_by_session_id: string;
+  cwd: string | null;
 }
 
 export interface InboxRecentClaim {
@@ -175,6 +187,7 @@ export interface AttentionInbox {
     pending_handoff_count: number;
     pending_wake_count: number;
     unread_message_count: number;
+    paused_lane_count: number;
     stalled_lane_count: number;
     fresh_other_claim_count: number;
     stale_other_claim_count: number;
@@ -201,6 +214,7 @@ export interface AttentionInbox {
   /** `message_read` siblings for messages this session originally sent
    *  that have not been replied to. Sized by `read_receipt_window_ms`. */
   read_receipts: ReadReceipt[];
+  paused_lanes: InboxPausedLane[];
   stalled_lanes: InboxLane[];
   stalled_lanes_truncated: boolean;
   stale_claim_signals: InboxStaleClaimSignals;
@@ -330,6 +344,7 @@ export function buildAttentionInbox(
   const stalledLaneResult =
     opts.include_stalled_lanes === false ? emptyStalledLaneResult() : collectStalledLanes(opts);
   const stalled_lanes = stalledLaneResult.rows;
+  const paused_lanes = collectPausedLanes(store, opts);
   const file_heat = collectFileHeat(store, opts, taskIds, now);
 
   const read_receipts = collectReadReceipts(store, opts, taskIds, now);
@@ -343,6 +358,7 @@ export function buildAttentionInbox(
     pending_handoff_count: pending_handoffs.length,
     pending_wake_count: pending_wakes.length,
     unread_message_count: unread_messages.length,
+    paused_lane_count: paused_lanes.length,
     stalled_lane_count: stalledLaneResult.total,
     fresh_other_claim_count: recent_other_claims.length,
     stale_other_claim_count: staleClaims.length,
@@ -356,6 +372,7 @@ export function buildAttentionInbox(
       pending_handoffs,
       pending_wakes,
       unread_messages,
+      paused_lanes,
       stalled_lanes,
       stale_claim_signals,
       recent_other_claims,
@@ -375,6 +392,7 @@ export function buildAttentionInbox(
     unread_messages,
     coalesced_messages,
     read_receipts,
+    paused_lanes,
     stalled_lanes,
     stalled_lanes_truncated: stalledLaneResult.truncated,
     stale_claim_signals,
@@ -731,6 +749,34 @@ function compactFileHeat(row: FileHeatRow): InboxFileHeat {
   };
 }
 
+function collectPausedLanes(store: MemoryStore, opts: AttentionInboxOptions): InboxPausedLane[] {
+  const repoRoots = attentionRepoRoots(opts);
+  return store.storage
+    .listPausedLanes(100)
+    .filter((lane) => pausedLaneMatchesRepo(lane, repoRoots))
+    .map(compactPausedLane);
+}
+
+function pausedLaneMatchesRepo(lane: PausedLaneRow, repoRoots: Set<string>): boolean {
+  if (repoRoots.size === 0) return true;
+  if (!lane.repo_root) return true;
+  return repoRoots.has(resolve(lane.repo_root));
+}
+
+function compactPausedLane(row: PausedLaneRow): InboxPausedLane {
+  return {
+    session_id: row.session_id,
+    task_id: row.task_id,
+    repo_root: row.repo_root,
+    branch: row.branch,
+    task: row.task_title,
+    reason: row.reason,
+    paused_at: row.updated_at,
+    paused_by_session_id: row.updated_by_session_id,
+    cwd: row.cwd,
+  };
+}
+
 function collectStalledLanes(opts: AttentionInboxOptions): {
   rows: InboxLane[];
   total: number;
@@ -783,6 +829,7 @@ function deriveNextAction(parts: {
   pending_handoffs: InboxHandoff[];
   pending_wakes: InboxWake[];
   unread_messages: InboxMessage[];
+  paused_lanes: InboxPausedLane[];
   stalled_lanes: InboxLane[];
   stale_claim_signals: InboxStaleClaimSignals;
   recent_other_claims: InboxRecentClaim[];
@@ -810,6 +857,9 @@ function deriveNextAction(parts: {
   }
   if (parts.live_file_contentions.length > 0) {
     return 'LIVE_FILE_CONTENTION: another live agent owns a file you claimed; coordinate before editing.';
+  }
+  if (parts.paused_lanes.length > 0) {
+    return 'Review paused lanes — resume them or request takeover for contended files.';
   }
   if (parts.stalled_lanes.length > 0) {
     return 'Review stalled lanes — takeover may be safer than waiting for the owner to return.';
