@@ -1281,13 +1281,13 @@ export class Storage {
         started_at: now,
         metadata: null,
       });
-	      this.db
-	        .prepare(
-	          `INSERT OR REPLACE INTO task_claims(
+      this.db
+        .prepare(
+          `INSERT OR REPLACE INTO task_claims(
 	            task_id, file_path, session_id, claimed_at, state, expires_at, handoff_observation_id
 	          ) VALUES (?, ?, ?, ?, 'active', NULL, NULL)`,
-	        )
-	        .run(previous.task_id, previous.file_path, p.requester_session_id, now);
+        )
+        .run(previous.task_id, previous.file_path, p.requester_session_id, now);
       const weakenedObservationId = this.insertObservation({
         session_id: previous.session_id,
         kind: 'claim-weakened',
