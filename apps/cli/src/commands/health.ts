@@ -1828,6 +1828,27 @@ function healthActionHints(payload: ColonyHealthPayloadWithoutHints): ActionHint
     });
   }
 
+  if (liveContention.paused_lanes > 0 && liveContention.dirty_contended_files > 0) {
+    hints.push({
+      metric: 'paused dirty lanes',
+      status: 'bad',
+      current: `${liveContention.paused_lanes} paused lane(s), ${liveContention.dirty_contended_files} dirty contended file(s)`,
+      target: '0 paused dirty lanes',
+      action:
+        'paused lanes with dirty files should be finished, handed off, or cleaned before broad verification.',
+      readiness_scope: 'execution_safety',
+      priority: 6,
+      command: 'colony health --json',
+      prompt: codexPrompt({
+        goal: 'clear paused dirty lanes before broad verification',
+        current: `${liveContention.paused_lanes} paused lanes; ${liveContention.dirty_contended_files} dirty contended files`,
+        inspect: 'git status in each paused worktree, task_note_working, task_hand_off',
+        acceptance:
+          'dirty paused lanes are finished, handed off, or intentionally cleaned before broad verification',
+      }),
+    });
+  }
+
   const hivemindToAttention = payload.conversions.hivemind_context_to_attention_inbox;
   if (isBelowTarget(hivemindToAttention.conversion_rate, TARGET_HIVEMIND_TO_ATTENTION)) {
     hints.push({

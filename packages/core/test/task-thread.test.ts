@@ -115,6 +115,79 @@ describe('TaskThread', () => {
     }
   });
 
+  it('quota_exhausted handoff weakens sender claims and accept inherits them', () => {
+    seed('claude', 'codex');
+    const thread = TaskThread.open(store, {
+      repo_root: '/r',
+      branch: 'feat/quota',
+      session_id: 'claude',
+    });
+    thread.join('claude', 'claude');
+    thread.join('codex', 'codex');
+    thread.claimFile({ session_id: 'claude', file_path: 'src/runtime.ts' });
+    thread.claimFile({ session_id: 'claude', file_path: 'src/viewer.tsx' });
+
+    const handoffId = thread.handOff({
+      from_session_id: 'claude',
+      from_agent: 'claude',
+      to_agent: 'any',
+      summary: 'Session hit usage limit; takeover requested.',
+      next_steps: ['inspect dirty files, then continue'],
+      reason: 'quota_exhausted',
+      runtime_status: 'blocked_by_runtime_limit',
+      quota_context: {
+        agent: 'claude',
+        session_id: 'claude',
+        repo_root: '/r',
+        branch: 'feat/quota',
+        worktree_path: '/r',
+        task_id: thread.task_id,
+        claimed_files: [],
+        dirty_files: ['src/runtime.ts'],
+        last_command: 'pnpm test',
+        last_tool: 'Bash',
+        last_verification: { command: 'pnpm test', result: 'blocked: quota_exhausted' },
+        suggested_next_step: 'accept handoff and inspect dirty files',
+        handoff_ttl_ms: 2 * 60 * 60_000,
+      },
+    });
+
+    expect(store.storage.getClaim(thread.task_id, 'src/runtime.ts')).toMatchObject({
+      session_id: 'claude',
+      state: 'handoff_pending',
+      handoff_observation_id: handoffId,
+    });
+    expect(store.storage.getClaim(thread.task_id, 'src/viewer.tsx')).toMatchObject({
+      session_id: 'claude',
+      state: 'handoff_pending',
+      handoff_observation_id: handoffId,
+    });
+    expect(store.storage.taskObservationsByKind(thread.task_id, 'claim-weakened')).toHaveLength(2);
+
+    const row = store.storage.getObservation(handoffId);
+    const meta = JSON.parse(row?.metadata ?? '{}') as {
+      quota_context: { claimed_files: string[]; dirty_files: string[] };
+    };
+    expect(meta.quota_context.claimed_files.sort()).toEqual(['src/runtime.ts', 'src/viewer.tsx']);
+    expect(meta.quota_context.dirty_files).toEqual(['src/runtime.ts']);
+    expect(row?.content).toContain('dirty_files=src/runtime.ts');
+    expect(row?.content).toContain('claimed_files=src/runtime.ts, src/viewer.tsx');
+
+    thread.acceptHandoff(handoffId, 'codex');
+    expect(store.storage.getClaim(thread.task_id, 'src/runtime.ts')).toMatchObject({
+      session_id: 'codex',
+      state: 'active',
+      expires_at: null,
+      handoff_observation_id: null,
+    });
+    expect(store.storage.getClaim(thread.task_id, 'src/viewer.tsx')).toMatchObject({
+      session_id: 'codex',
+      state: 'active',
+      expires_at: null,
+      handoff_observation_id: null,
+    });
+  });
+
   it('handoff addressed to a specific agent refuses a mismatched agent', () => {
     seed('claude', 'codex', 'intruder');
     const thread = TaskThread.open(store, {
