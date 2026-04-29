@@ -241,6 +241,46 @@ describe('buildAttentionInbox', () => {
     ]);
   });
 
+  it('surfaces paused lanes as attention items', () => {
+    seed('codex@old', 'codex@new');
+    const thread = TaskThread.open(store, {
+      repo_root: '/r',
+      branch: 'agent/codex/paused-lane',
+      title: 'Paused lane task',
+      session_id: 'codex@old',
+    });
+    thread.join('codex@old', 'codex');
+    thread.join('codex@new', 'codex');
+    store.storage.setLaneState({
+      session_id: 'codex@old',
+      state: 'paused',
+      updated_by_session_id: 'human:ops',
+      reason: 'waiting for takeover decision',
+      updated_at: 1234,
+    });
+
+    const inbox = buildAttentionInbox(store, {
+      session_id: 'codex@new',
+      agent: 'codex',
+      repo_root: '/r',
+      task_ids: [thread.task_id],
+      include_stalled_lanes: false,
+    });
+
+    expect(inbox.summary.paused_lane_count).toBe(1);
+    expect(inbox.paused_lanes).toEqual([
+      expect.objectContaining({
+        session_id: 'codex@old',
+        task_id: thread.task_id,
+        repo_root: '/r',
+        branch: 'agent/codex/paused-lane',
+        reason: 'waiting for takeover decision',
+        paused_by_session_id: 'human:ops',
+      }),
+    ]);
+    expect(inbox.summary.next_action).toMatch(/paused lanes/i);
+  });
+
   it('adds compact reply and mark-read suggestions to unread message items', () => {
     seed('claude', 'codex');
     const thread = TaskThread.open(store, {

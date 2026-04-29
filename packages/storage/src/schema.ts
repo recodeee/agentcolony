@@ -100,6 +100,15 @@ CREATE TABLE IF NOT EXISTS task_claims (
 );
 CREATE INDEX IF NOT EXISTS idx_task_claims_session ON task_claims(session_id);
 
+CREATE TABLE IF NOT EXISTS lane_states (
+  session_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK(state IN ('active','paused')),
+  reason TEXT,
+  updated_at INTEGER NOT NULL,
+  updated_by_session_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lane_states_state ON lane_states(state, updated_at DESC);
+
 -- Pheromone trails: ambient, decaying "activity intensity" left on files by
 -- tool use. One row per (task_id, file_path, session_id) — different agents
 -- leave distinguishable trails so "Claude has been here" is separable from

@@ -9,8 +9,10 @@ import {
   signalMetadataFromProposal,
 } from '@colony/core';
 import type {
-  ClaimBeforeEditMatchSources,
   ClaimBeforeEditStats,
+  ClaimMatchSources,
+  ClaimMissReasons,
+  NearestClaimExample,
   ObservationRow,
   ProposalRow,
   ReinforcementRow,
@@ -130,7 +132,9 @@ interface ClaimBeforeEditPayload extends ClaimBeforeEditStats {
   /** User-facing remediation for hook wiring or session-binding failures. */
   install_hint: string | null;
   claim_match_window_ms: number;
-  claim_match_sources: ClaimBeforeEditMatchSources;
+  claim_match_sources: ClaimMatchSources;
+  claim_miss_reasons: ClaimMissReasons;
+  nearest_claim_examples: NearestClaimExample[];
 }
 
 interface SignalHealthPayload {
@@ -801,6 +805,10 @@ function claimBeforeEditPayload(
   const preToolUseSignals = stats.pre_tool_use_signals ?? 0;
   const sessionBindingMissing = stats.session_binding_missing ?? 0;
   const claimMatchSources = claimMatchSourcesPayload(stats.claim_match_sources);
+  const claimMissReasons = claimMissReasonsPayload(
+    stats.claim_miss_reasons,
+    editsWithoutClaimBefore,
+  );
   const codexRolloutWithoutBridge = codexRolloutEdits > 0 && preToolUseSignals === 0;
   const status =
     stats.edit_tool_calls === 0
@@ -847,17 +855,36 @@ function claimBeforeEditPayload(
     install_hint: installHint,
     claim_match_window_ms: stats.claim_match_window_ms ?? 0,
     claim_match_sources: claimMatchSources,
+    claim_miss_reasons: claimMissReasons,
+    nearest_claim_examples: stats.nearest_claim_examples ?? [],
   };
 }
 
 function claimMatchSourcesPayload(
-  sources: Partial<ClaimBeforeEditMatchSources> | undefined,
-): ClaimBeforeEditMatchSources {
+  sources: Partial<ClaimMatchSources> | undefined,
+): ClaimMatchSources {
   return {
     exact_session: sources?.exact_session ?? 0,
     repo_branch: sources?.repo_branch ?? 0,
     worktree: sources?.worktree ?? 0,
     agent_lane: sources?.agent_lane ?? 0,
+  };
+}
+
+function claimMissReasonsPayload(
+  reasons: Partial<ClaimMissReasons> | undefined,
+  fallbackNoClaim: number,
+): ClaimMissReasons {
+  return {
+    no_claim_for_file: reasons?.no_claim_for_file ?? fallbackNoClaim,
+    claim_after_edit: reasons?.claim_after_edit ?? 0,
+    session_id_mismatch: reasons?.session_id_mismatch ?? 0,
+    repo_root_mismatch: reasons?.repo_root_mismatch ?? 0,
+    branch_mismatch: reasons?.branch_mismatch ?? 0,
+    path_mismatch: reasons?.path_mismatch ?? 0,
+    worktree_path_mismatch: reasons?.worktree_path_mismatch ?? 0,
+    pseudo_path_skipped: reasons?.pseudo_path_skipped ?? 0,
+    pre_tool_use_missing: reasons?.pre_tool_use_missing ?? 0,
   };
 }
 
@@ -1007,6 +1034,8 @@ function formatClaimBeforeEdit(payload: ClaimBeforeEditPayload): string[] {
     `  telemetry: edits_with_claim=${payload.edits_with_claim}, edits_missing_claim=${payload.edits_missing_claim}, auto_claimed_before_edit=${payload.auto_claimed_before_edit}, pre_tool_use_signals=${payload.pre_tool_use_signals}`,
   );
   lines.push(...formatClaimMatchSources(payload));
+  lines.push(...formatClaimMissReasons(payload.claim_miss_reasons));
+  lines.push(...formatNearestClaimExamples(payload.nearest_claim_examples));
   lines.push(...formatEditSourceBreakdown(payload));
   if (payload.session_binding_missing > 0) {
     lines.push(kleur.yellow(`  session binding missing: ${payload.session_binding_missing}`));
@@ -1022,8 +1051,43 @@ function formatClaimBeforeEdit(payload: ClaimBeforeEditPayload): string[] {
 function formatClaimMatchSources(payload: ClaimBeforeEditPayload): string[] {
   const sources = payload.claim_match_sources;
   return [
-    `  match_source: exact_session=${sources.exact_session}, repo_branch=${sources.repo_branch}, worktree=${sources.worktree}, agent_lane=${sources.agent_lane}, window_ms=${payload.claim_match_window_ms}`,
+    `  claim_match_sources: exact_session=${sources.exact_session}, repo_branch=${sources.repo_branch}, worktree=${sources.worktree}, agent_lane=${sources.agent_lane}, window_ms=${payload.claim_match_window_ms} (health-only fallback)`,
   ];
+}
+
+function formatClaimMissReasons(reasons: ClaimMissReasons): string[] {
+  return [
+    '  why claims did not match edits:',
+    `    no_claim_for_file: ${reasons.no_claim_for_file}`,
+    `    claim_after_edit: ${reasons.claim_after_edit}`,
+    `    session_id_mismatch: ${reasons.session_id_mismatch}`,
+    `    repo_root_mismatch: ${reasons.repo_root_mismatch}`,
+    `    branch_mismatch: ${reasons.branch_mismatch}`,
+    `    path_mismatch: ${reasons.path_mismatch}`,
+    `    worktree_path_mismatch: ${reasons.worktree_path_mismatch}`,
+    `    pseudo_path_skipped: ${reasons.pseudo_path_skipped}`,
+    `    pre_tool_use_missing: ${reasons.pre_tool_use_missing}`,
+  ];
+}
+
+function formatNearestClaimExamples(examples: NearestClaimExample[]): string[] {
+  if (examples.length === 0) return [];
+  const lines = ['  nearest claim examples:'];
+  for (const example of examples.slice(0, HEALTH_TOOL_LIMIT)) {
+    const claimRef =
+      example.nearest_claim_id === null
+        ? 'no nearby claim'
+        : `claim#${example.nearest_claim_id} ${example.claim_file_path ?? 'unknown'} by ${example.claim_session_id ?? 'unknown'} ${formatDistance(example.distance_ms)}`;
+    lines.push(
+      `    ${example.reason}: edit#${example.edit_id} ${example.edit_file_path ?? 'unknown'} by ${example.edit_session_id}; ${claimRef}`,
+    );
+  }
+  return lines;
+}
+
+function formatDistance(distanceMs: number | null): string {
+  if (distanceMs === null) return '';
+  return `${distanceMs}ms away`;
 }
 
 function formatEditSourceBreakdown(payload: ClaimBeforeEditPayload): string[] {
