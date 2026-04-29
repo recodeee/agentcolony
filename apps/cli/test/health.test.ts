@@ -460,11 +460,7 @@ describe('colony health payload', () => {
       } as never,
       queen_sweep: [
         {
-          items: [
-            { reason: 'stalled' },
-            { reason: 'unclaimed' },
-            { reason: 'ready-to-archive' },
-          ],
+          items: [{ reason: 'stalled' }, { reason: 'unclaimed' }, { reason: 'ready-to-archive' }],
         },
       ] as never,
     });
