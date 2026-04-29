@@ -44,6 +44,13 @@ export {
   type ScopeOverlap,
 } from './claim-graph.js';
 export {
+  liveFileContentionsForClaim,
+  liveFileContentionsForSessionClaims,
+  normalizeClaimFilePath,
+  type LiveFileContentionOptions,
+  type LiveFileContentionWarning,
+} from './live-file-contention.js';
+export {
   TaskThread,
   TaskThreadError,
   TASK_THREAD_ERROR_CODES,
