@@ -24,6 +24,7 @@ describe('message tool descriptions', () => {
     expect(messageToolSource).toContain('fetch full bodies via get_observations');
     expect(attentionToolSource).toContain('main surface where task_message items show up');
     expect(attentionToolSource).toContain('reply_tool=task_message');
+    expect(attentionToolSource).toContain('suggested_reply_args');
     expect(attentionToolSource).toContain('mark_read_tool=task_message_mark_read hints');
     expect(mcpDocsSource).toContain('## `task_message` lifecycle');
     expect(mcpDocsSource).toContain(
@@ -37,6 +38,7 @@ describe('message tool descriptions', () => {
     );
     expect(mcpDocsSource).toContain('This is the main surface where `task_message` items show up');
     expect(mcpDocsSource).toContain('"reply_tool": "task_message"');
+    expect(mcpDocsSource).toContain('"suggested_reply_args":');
     expect(mcpDocsSource).toContain('"mark_read_tool": "task_message_mark_read"');
     expect(mcpDocsSource).toContain('"reply_with_tool": "task_message"');
     expect(mcpDocsSource).toContain('"mark_read_with_tool": "task_message_mark_read"');

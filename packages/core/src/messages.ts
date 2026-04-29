@@ -54,6 +54,7 @@ export interface MessageMarkReadArgs {
 
 export interface MessageActionSummary extends MessageSummary {
   reply_tool: 'task_message';
+  suggested_reply_args: MessageReplyArgs;
   reply_args: MessageReplyArgs;
   mark_read_tool: 'task_message_mark_read';
   mark_read_args: MessageMarkReadArgs;
@@ -180,19 +181,21 @@ export function withMessageActionHints(
   message: MessageSummary,
   opts: MessageActionOptions,
 ): MessageActionSummary {
+  const suggestedReplyArgs = {
+    task_id: message.task_id,
+    session_id: opts.session_id,
+    agent: opts.agent,
+    to_agent: 'any' as const,
+    to_session_id: message.from_session_id,
+    reply_to: message.id,
+    urgency: 'fyi' as const,
+    content: '...',
+  };
   const base = {
     ...message,
     reply_tool: 'task_message' as const,
-    reply_args: {
-      task_id: message.task_id,
-      session_id: opts.session_id,
-      agent: opts.agent,
-      to_agent: 'any' as const,
-      to_session_id: message.from_session_id,
-      reply_to: message.id,
-      urgency: 'fyi' as const,
-      content: '...',
-    },
+    suggested_reply_args: suggestedReplyArgs,
+    reply_args: suggestedReplyArgs,
     mark_read_tool: 'task_message_mark_read' as const,
     mark_read_args: {
       message_observation_id: message.id,

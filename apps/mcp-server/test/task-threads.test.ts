@@ -371,7 +371,7 @@ describe('task threads — handoff lifecycle', () => {
     });
   });
 
-  it('task_post hints to task_note_working for unknown task_id cases', async () => {
+  it('task_post hints for agent mentions even without an explicit ask', async () => {
     const { task_id, sessionA } = seedTwoSessionTask();
 
     const { hint } = await call<{ id: number; hint?: string }>('task_post', {
@@ -381,7 +381,24 @@ describe('task threads — handoff lifecycle', () => {
       content: 'agent-18 recorded shared verification evidence for the task thread',
     });
 
-    expect(hint).toBe('If you do not know task_id, use task_note_working.');
+    expect(hint).toBe(
+      'For directed agent coordination, use task_message. If you do not know task_id, use task_note_working.',
+    );
+  });
+
+  it('task_post hints for action requests even without an agent mention', async () => {
+    const { task_id, sessionA } = seedTwoSessionTask();
+
+    const { hint } = await call<{ id: number; hint?: string }>('task_post', {
+      task_id,
+      session_id: sessionA,
+      kind: 'question',
+      content: 'Can you verify the directed message path?',
+    });
+
+    expect(hint).toBe(
+      'For directed agent coordination, use task_message. If you do not know task_id, use task_note_working.',
+    );
   });
 
   it('task_post nudges future-work notes toward task_propose', async () => {

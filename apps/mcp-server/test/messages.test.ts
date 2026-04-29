@@ -101,6 +101,7 @@ describe('task threads — direct messages', () => {
         status: string;
         from_agent: string;
         reply_tool: string;
+        suggested_reply_args: { reply_to: number; to_session_id: string; content: string };
         mark_read_tool: string;
         reply_args: { reply_to: number; to_session_id: string; content: string };
         mark_read_args: { message_observation_id: number; session_id: string };
@@ -116,6 +117,11 @@ describe('task threads — direct messages', () => {
     expect(entry?.status).toBe('unread');
     expect(entry?.from_agent).toBe('claude');
     expect(entry?.reply_tool).toBe('task_message');
+    expect(entry?.suggested_reply_args).toMatchObject({
+      reply_to: message_observation_id,
+      to_session_id: sessionA,
+      content: '...',
+    });
     expect(entry?.reply_args).toMatchObject({
       reply_to: message_observation_id,
       to_session_id: sessionA,
@@ -174,6 +180,119 @@ describe('task threads — direct messages', () => {
       agent: 'claude',
     });
     expect(aInbox.find((m) => m.id === replyId)?.from_agent).toBe('codex');
+  });
+
+  it('attention_inbox makes directed-message mark-read and reply paths obvious', async () => {
+    const { task_id, sessionA, sessionB } = seedTwoSessionTask();
+
+    const { message_observation_id: firstId } = await call<{ message_observation_id: number }>(
+      'task_message',
+      {
+        task_id,
+        session_id: sessionA,
+        agent: 'claude',
+        to_agent: 'codex',
+        content: 'please confirm the test shape',
+        urgency: 'needs_reply',
+      },
+    );
+
+    const recipientInbox = await call<{
+      summary: { unread_message_count: number; next_action: string };
+      unread_messages: Array<{
+        id: number;
+        reply_tool: string;
+        suggested_reply_args: {
+          task_id: number;
+          session_id: string;
+          agent: string;
+          to_agent: string;
+          to_session_id: string;
+          reply_to: number;
+          urgency: string;
+          content: string;
+        };
+        mark_read_tool: string;
+        mark_read_args: { message_observation_id: number; session_id: string };
+        next_action?: string;
+      }>;
+    }>('attention_inbox', {
+      session_id: sessionB,
+      agent: 'codex',
+      task_ids: [task_id],
+    });
+
+    expect(recipientInbox.summary.unread_message_count).toBe(1);
+    expect(recipientInbox.summary.next_action).toContain('Reply to task messages');
+    const first = recipientInbox.unread_messages.find((m) => m.id === firstId);
+    expect(first).toMatchObject({
+      reply_tool: 'task_message',
+      suggested_reply_args: {
+        task_id,
+        session_id: sessionB,
+        agent: 'codex',
+        to_agent: 'any',
+        to_session_id: sessionA,
+        reply_to: firstId,
+        urgency: 'fyi',
+        content: '...',
+      },
+      mark_read_tool: 'task_message_mark_read',
+      mark_read_args: {
+        message_observation_id: firstId,
+        session_id: sessionB,
+      },
+    });
+    expect(first?.next_action).toContain('Reply with task_message');
+
+    await call<{ status: string }>(first?.mark_read_tool ?? 'task_message_mark_read', {
+      message_observation_id: firstId,
+      session_id: sessionB,
+    });
+
+    const afterRead = await call<{ unread_messages: Array<{ id: number }> }>('attention_inbox', {
+      session_id: sessionB,
+      agent: 'codex',
+      task_ids: [task_id],
+    });
+    expect(afterRead.unread_messages.find((m) => m.id === firstId)).toBeUndefined();
+
+    const { message_observation_id: secondId } = await call<{ message_observation_id: number }>(
+      'task_message',
+      {
+        task_id,
+        session_id: sessionA,
+        agent: 'claude',
+        to_agent: 'codex',
+        content: 'please reply through the suggested args',
+        urgency: 'needs_reply',
+      },
+    );
+    const inboxForReply = await call<typeof recipientInbox>('attention_inbox', {
+      session_id: sessionB,
+      agent: 'codex',
+      task_ids: [task_id],
+    });
+    const second = inboxForReply.unread_messages.find((m) => m.id === secondId);
+    expect(second?.suggested_reply_args.reply_to).toBe(secondId);
+
+    const { message_observation_id: replyId } = await call<{ message_observation_id: number }>(
+      second?.reply_tool ?? 'task_message',
+      {
+        ...second?.suggested_reply_args,
+        content: 'confirmed through suggested args',
+      },
+    );
+
+    const senderInbox = await call<{ unread_messages: Array<{ id: number; from_agent: string }> }>(
+      'attention_inbox',
+      {
+        session_id: sessionA,
+        agent: 'claude',
+        task_ids: [task_id],
+      },
+    );
+    expect(senderInbox.unread_messages.find((m) => m.id === replyId)?.from_agent).toBe('codex');
   });
 
   it('broadcast (to_agent=any) reaches every non-sender participant', async () => {

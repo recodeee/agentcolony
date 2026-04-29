@@ -76,7 +76,7 @@ export function register(server: McpServer, ctx: ToolContext): void {
 
   server.tool(
     'task_messages',
-    'Read unread messages. Lists compact previews addressed to you across tasks with reply_tool and mark_read_tool hints; fetch full bodies via get_observations.',
+    'Read unread messages. Lists compact previews addressed to you across tasks with reply_tool, suggested_reply_args, and mark_read_tool hints; fetch full bodies via get_observations.',
     {
       session_id: z.string().min(1),
       agent: z.string().min(1),

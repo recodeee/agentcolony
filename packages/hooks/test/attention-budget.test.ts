@@ -313,6 +313,16 @@ describe('SessionStart attention budget preface', () => {
           claimed_by_session_id: null,
           claimed_by_agent: null,
           reply_tool: 'task_message',
+          suggested_reply_args: {
+            task_id: 1,
+            session_id: 'B',
+            agent: 'codex',
+            to_agent: 'any',
+            to_session_id: 'A',
+            reply_to: 1,
+            urgency: 'fyi',
+            content: '...',
+          },
           reply_args: {
             task_id: 1,
             session_id: 'B',
