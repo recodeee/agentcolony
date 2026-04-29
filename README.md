@@ -107,6 +107,7 @@ Requirements:
 
 ```bash
 colony health
+colony health --fix-plan
 colony status
 colony search "error or decision"
 colony coordination sweep --json
@@ -118,6 +119,7 @@ pnpm smoke:codex-omx-pretool
 | Command | Purpose |
 | --- | --- |
 | `colony health` | Show readiness, adoption, stale signals, note migration, and claim-before-edit coverage. |
+| `colony health --fix-plan` | Print the guided recovery sequence for execution-safety states such as `pre_tool_use_missing`, stale claims, and live contentions. Add `--apply` to run coordination and queen sweeps; it still does not release claims or install hooks. |
 | `colony status` | Show storage, installed IDEs, worker state, memory counts, and embedding status. |
 | `colony search "<query>"` | Search prior observations and session memory. |
 | `colony timeline <session-id>` | Inspect one session chronologically. |

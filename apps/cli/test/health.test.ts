@@ -4,7 +4,12 @@ import path from 'node:path';
 import type { ClaimMatchSources, ClaimMissReasons, NearestClaimExample } from '@colony/storage';
 import kleur from 'kleur';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { buildColonyHealthPayload, formatColonyHealthOutput } from '../src/commands/health.js';
+import {
+  buildColonyHealthPayload,
+  buildHealthFixPlan,
+  formatColonyHealthOutput,
+  formatHealthFixPlanOutput,
+} from '../src/commands/health.js';
 
 const NOW = 1_800_000_000_000;
 const SINCE = NOW - 24 * 3_600_000;
@@ -358,6 +363,126 @@ describe('colony health payload', () => {
     expect(text).toContain('session_id_mismatch: 2');
     expect(text).toContain('repo_root_mismatch: 4');
     expect(text).toContain('branch_mismatch: 5');
+  });
+
+  it('builds a dry-run execution-safety recovery plan without running sweeps', () => {
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: [call(1, 'codex-alpha-session', 'Edit', NOW - 1_000)],
+        claimBeforeEdit: {
+          edit_tool_calls: 1,
+          edits_with_file_path: 1,
+          edits_claimed_before: 0,
+          claim_miss_reasons: {
+            pre_tool_use_missing: 4,
+            no_claim_for_file: 1,
+          },
+        },
+        tasks: [{ id: 1, repo_root: '/repo', branch: 'main' }],
+        observationsByTask: { 1: [] },
+        claimsByTask: {
+          1: [
+            {
+              task_id: 1,
+              file_path: 'src/stale.ts',
+              session_id: 'codex-stale',
+              claimed_at: NOW - 5 * 3_600_000,
+            },
+          ],
+        },
+      }),
+      {
+        since: SINCE,
+        window_hours: 24,
+        now: NOW,
+        codex_sessions_root: NO_CODEX_ROOT,
+        repo_root: '/repo',
+      },
+    );
+
+    const plan = buildHealthFixPlan(payload, {
+      repo_root: '/repo',
+      apply: false,
+    });
+    const text = formatHealthFixPlanOutput(plan);
+
+    expect(plan.mode).toBe('dry-run');
+    expect(plan.safety).toMatchObject({
+      mutates_claims: false,
+      installs_hooks: false,
+      ran_coordination_sweep: false,
+      ran_queen_sweep: false,
+    });
+    expect(plan.current).toMatchObject({
+      pre_tool_use_missing: 4,
+      pre_tool_use_missing_dominates: true,
+      stale_claims: 1,
+    });
+    expect(text).toContain('mode: dry-run (no sweeps run)');
+    expect(text).toContain('[suggested] Reinstall/restart lifecycle hooks');
+    expect(text).toContain('colony install --ide codex  # then restart Codex/OMX');
+    expect(text).toContain('[planned] Run coordination sweep');
+    expect(text).toContain('[planned] Run queen sweep');
+    expect(text).toContain('colony coordination sweep --repo-root /repo --json');
+    expect(text).toContain('pnpm smoke:codex-omx-pretool');
+    expect(plan.coordination_sweep).toBeUndefined();
+    expect(plan.queen_sweep).toBeUndefined();
+  });
+
+  it('marks sweeps as run only when fix-plan apply data is present', () => {
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: healthyWindowCalls(),
+        claimBeforeEdit: {
+          edit_tool_calls: 0,
+          edits_with_file_path: 0,
+          edits_claimed_before: 0,
+        },
+      }),
+      {
+        since: SINCE,
+        window_hours: 24,
+        now: NOW,
+        codex_sessions_root: NO_CODEX_ROOT,
+        repo_root: '/repo',
+      },
+    );
+
+    const plan = buildHealthFixPlan(payload, {
+      repo_root: '/repo with space',
+      apply: true,
+      coordination_sweep: {
+        summary: {
+          stale_claim_count: 2,
+          expired_weak_claim_count: 1,
+        },
+        recommended_action: 'dry-run: release 1 expired/weak advisory claim',
+      } as never,
+      queen_sweep: [
+        {
+          items: [
+            { reason: 'stalled' },
+            { reason: 'unclaimed' },
+            { reason: 'ready-to-archive' },
+          ],
+        },
+      ] as never,
+    });
+    const text = formatHealthFixPlanOutput(plan);
+
+    expect(plan.mode).toBe('apply');
+    expect(plan.safety).toMatchObject({
+      mutates_claims: false,
+      installs_hooks: false,
+      ran_coordination_sweep: true,
+      ran_queen_sweep: true,
+    });
+    expect(text).toContain('mode: apply (sweeps run)');
+    expect(text).toContain('[ran] Run coordination sweep');
+    expect(text).toContain('stale=2, expired/weak=1');
+    expect(text).toContain('[ran] Run queen sweep');
+    expect(text).toContain('stalled=1, unclaimed=1, ready-to-archive=1');
+    expect(text).toContain("colony queen sweep --repo-root '/repo with space' --json");
   });
 
   it('keeps expired claims out of stale and active health counts', () => {
