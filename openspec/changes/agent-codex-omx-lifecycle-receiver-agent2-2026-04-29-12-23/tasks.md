@@ -25,4 +25,9 @@
   - `pnpm --filter @imdeadpool/colony-cli test -- bridge.test.ts`
   - `pnpm exec biome check apps/cli/src/commands/bridge.ts apps/cli/test/bridge.test.ts packages/hooks/src/index.ts packages/hooks/src/lifecycle-envelope.ts packages/hooks/test/lifecycle-envelope.test.ts`
   - `openspec validate --specs`
-- [ ] Record PR URL, `MERGED` state, and sandbox cleanup evidence.
+- [x] Record PR URL, `MERGED` state, and sandbox cleanup evidence.
+  - PR: https://github.com/recodeee/colony/pull/263
+  - Merge state: `MERGED`, merge commit `984a6694b4fab0971f769b72d9656bc8b9325929`
+  - Sandbox cleanup: source worktree
+    `.omx/agent-worktrees/colony__codex__omx-lifecycle-receiver-agent2-2026-04-29-12-23`
+    absent from `git worktree list`.
