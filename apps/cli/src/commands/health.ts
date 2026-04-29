@@ -42,6 +42,7 @@ import kleur from 'kleur';
 import { readCodexEditToolCallsSince, readCodexMcpToolCallsSince } from '../lib/codex-rollouts.js';
 
 const DEFAULT_HOURS = 24;
+const DEFAULT_RECENT_WINDOW_HOURS = 1;
 const HEALTH_TOOL_LIMIT = 5;
 const DEFAULT_HANDOFF_TTL_MS = 2 * 60 * 60_000;
 const PLAN_SUBTASK_BRANCH_RE = /^spec\/([a-z0-9-]+)\/sub-(\d+)$/;
@@ -56,6 +57,8 @@ const LIFECYCLE_BRIDGE_MISSING_MIN_HOOK_CAPABLE_EDITS = 10;
 const LIFECYCLE_BRIDGE_NEAR_ZERO_PRE_TOOL_USE_SIGNAL_RATIO = 0.05;
 const LIFECYCLE_BRIDGE_ROOT_CAUSE =
   'Lifecycle bridge missing: many task_claim_file calls, many hook-capable edits, near-zero pre_tool_use_signals.';
+const OLD_TELEMETRY_POLLUTION_ROOT_CAUSE =
+  '24h execution_safety is bad because older edit telemetry remains inside the selected window; no fresh bad edits detected recently.';
 const LIFECYCLE_BRIDGE_ACTION =
   'Install/wire the lifecycle bridge so OMX/Codex/Claude emits pre_tool_use before file mutation.';
 const LIFECYCLE_BRIDGE_COMMAND =
@@ -144,6 +147,12 @@ interface ClaimBeforeEditPayload extends ClaimBeforeEditStats {
    *  PreToolUse hook is firing somewhere; zero with edits > 0 strongly
    *  suggests the hook is not wired into the active editor session. */
   pre_tool_use_signals: number;
+  old_telemetry_pollution: boolean;
+  recent_window_hours: number;
+  recent_hook_capable_edits: number;
+  recent_pre_tool_use_missing: number;
+  recent_pre_tool_use_signals: number;
+  recent_claim_before_edit_rate: number | null;
   /** PreToolUse fired, but the hook session id was not present in Colony
    *  storage, so telemetry was recorded under the diagnostics fallback. */
   session_binding_missing: number;
@@ -321,11 +330,11 @@ interface ActionHint {
 }
 
 interface RootCauseSummary {
-  kind: 'lifecycle_bridge_missing';
+  kind: 'lifecycle_bridge_missing' | 'old_telemetry_pollution';
   summary: string;
   evidence: string;
   action: string;
-  command: string;
+  command?: string;
 }
 
 interface HealthFixPlanStep {
@@ -429,6 +438,7 @@ export function buildColonyHealthPayload(
   options: {
     since: number;
     window_hours: number;
+    recent_window_hours?: number;
     now?: number;
     claim_stale_minutes?: number;
     codex_sessions_root?: string;
@@ -440,6 +450,8 @@ export function buildColonyHealthPayload(
   },
 ): ColonyHealthPayload {
   const now = options.now ?? Date.now();
+  const recentWindowHours = options.recent_window_hours ?? DEFAULT_RECENT_WINDOW_HOURS;
+  const recentSince = Math.max(options.since, now - recentWindowHours * 3_600_000);
   const colonyCalls = storage.toolCallsSince(options.since);
   // Codex CLI doesn't fire colony's PostToolUse hook, so its MCP traffic never
   // reaches the colony observations table — see the recodee dashboard backend
@@ -471,8 +483,26 @@ export function buildColonyHealthPayload(
   const omxRuntimeStats = omxRuntimeSummaryStats(storage, options.since);
   const searchCalls = searchCallsPerSession(calls);
   const claimBeforeEditStats = storage.claimBeforeEditStats(options.since);
+  const recentClaimBeforeEditStats = storage.claimBeforeEditStats(recentSince);
   const taskSelection = taskSelectionPayload(calls);
   const taskClaimFileCalls = countTool(calls, 'task_claim_file');
+  const recentTaskClaimFileCalls = countTool(
+    calls.filter((call) => call.ts >= recentSince),
+    'task_claim_file',
+  );
+  const liveContention = liveContentionPayload(storage, tasks, {
+    since: options.since,
+    now,
+    stale_claim_minutes: options.claim_stale_minutes ?? defaultSettings.claimStaleMinutes,
+    ...(options.repo_root !== undefined ? { repo_root: options.repo_root } : {}),
+    ...(options.hivemind !== undefined ? { hivemind: options.hivemind } : {}),
+    ...(options.dirty_files_by_worktree !== undefined
+      ? { dirty_files_by_worktree: options.dirty_files_by_worktree }
+      : {}),
+    ...(options.worktree_contention !== undefined
+      ? { worktree_contention: options.worktree_contention }
+      : {}),
+  });
 
   const payload: ColonyHealthPayloadWithoutHints = {
     generated_at: new Date(now).toISOString(),
@@ -509,6 +539,13 @@ export function buildColonyHealthPayload(
       claimBeforeEditStats,
       taskClaimFileCalls,
       codexEditCalls.length,
+      {
+        recent_stats: recentClaimBeforeEditStats,
+        recent_task_claim_file_calls: recentTaskClaimFileCalls,
+        recent_window_hours: recentWindowHours,
+        live_file_contentions: liveContention.live_file_contentions,
+        dirty_contended_files: liveContention.dirty_contended_files,
+      },
     ),
     signal_health: signalHealthPayload(storage, tasks, {
       since: options.since,
@@ -524,19 +561,7 @@ export function buildColonyHealthPayload(
       now,
       stale_claim_minutes: options.claim_stale_minutes ?? defaultSettings.claimStaleMinutes,
     }),
-    live_contention_health: liveContentionPayload(storage, tasks, {
-      since: options.since,
-      now,
-      stale_claim_minutes: options.claim_stale_minutes ?? defaultSettings.claimStaleMinutes,
-      ...(options.repo_root !== undefined ? { repo_root: options.repo_root } : {}),
-      ...(options.hivemind !== undefined ? { hivemind: options.hivemind } : {}),
-      ...(options.dirty_files_by_worktree !== undefined
-        ? { dirty_files_by_worktree: options.dirty_files_by_worktree }
-        : {}),
-      ...(options.worktree_contention !== undefined
-        ? { worktree_contention: options.worktree_contention }
-        : {}),
-    }),
+    live_contention_health: liveContention,
     adoption_thresholds: adoptionThresholds(calls, {
       colony_mcp_share: ratio(colonyMcpToolCalls, mcpToolCalls),
       task_claim_file_calls: taskClaimFileCalls,
@@ -910,8 +935,10 @@ function formatReadinessItem(label: string, item: ReadinessSummaryItem): string[
       `    root cause: ${item.root_cause.summary}`,
       `    evidence: ${item.root_cause.evidence}`,
       `    action: ${item.root_cause.action}`,
-      `    cmd:  ${item.root_cause.command}`,
     );
+    if (item.root_cause.command) {
+      lines.push(`    cmd:  ${item.root_cause.command}`);
+    }
   }
   return lines;
 }
@@ -928,6 +955,11 @@ export function registerHealthCommand(program: Command): void {
     .command('health')
     .description('Show Colony adoption ratios from local DB evidence')
     .option('--hours <n>', 'Window size in hours', String(DEFAULT_HOURS))
+    .option(
+      '--recent-window-hours <n>',
+      'Recent execution-safety subwindow in hours',
+      String(DEFAULT_RECENT_WINDOW_HOURS),
+    )
     .option(
       '--repo-root <path>',
       'repo root for fix-plan sweep commands (defaults to process.cwd())',
@@ -946,6 +978,7 @@ export function registerHealthCommand(program: Command): void {
     .action(
       async (opts: {
         hours: string;
+        recentWindowHours: string;
         repoRoot?: string;
         json?: boolean;
         prompts?: boolean;
@@ -954,6 +987,7 @@ export function registerHealthCommand(program: Command): void {
         apply?: boolean;
       }) => {
         const hours = parseHours(opts.hours);
+        const recentWindowHours = parseHours(opts.recentWindowHours);
         const settings = loadSettings();
         const repoRoot = resolve(opts.repoRoot ?? process.cwd());
 
@@ -963,6 +997,7 @@ export function registerHealthCommand(program: Command): void {
             const payload = buildColonyHealthPayload(store.storage, {
               since: Date.now() - hours * 3_600_000,
               window_hours: hours,
+              recent_window_hours: recentWindowHours,
               claim_stale_minutes: settings.claimStaleMinutes,
               repo_root: repoRoot,
             });
@@ -999,6 +1034,7 @@ export function registerHealthCommand(program: Command): void {
             const payload = buildColonyHealthPayload(storage, {
               since: Date.now() - hours * 3_600_000,
               window_hours: hours,
+              recent_window_hours: recentWindowHours,
               claim_stale_minutes: settings.claimStaleMinutes,
               repo_root: repoRoot,
             });
@@ -1030,7 +1066,7 @@ export function buildHealthFixPlan(
   const queenCommand = `colony queen sweep --repo-root ${shellQuote(options.repo_root)} --json`;
   const steps: HealthFixPlanStep[] = [];
 
-  if (preToolUseMissingDominates) {
+  if (preToolUseMissingDominates && !claim.old_telemetry_pollution) {
     steps.push({
       title: 'Reinstall/restart lifecycle hooks',
       status: 'suggested',
@@ -1289,10 +1325,24 @@ function claimBeforeEditPayload(
   stats: ClaimBeforeEditStats,
   taskClaimFileCalls: number,
   codexRolloutEdits: number,
+  recent: {
+    recent_stats: ClaimBeforeEditStats;
+    recent_task_claim_file_calls: number;
+    recent_window_hours: number;
+    live_file_contentions: number;
+    dirty_contended_files: number;
+  },
 ): ClaimBeforeEditPayload {
   const editsWithoutClaimBefore = stats.edits_with_file_path - stats.edits_claimed_before;
   const autoClaimedBeforeEdit = stats.auto_claimed_before_edit ?? 0;
   const preToolUseSignals = stats.pre_tool_use_signals ?? 0;
+  const recentPreToolUseSignals = recent.recent_stats.pre_tool_use_signals ?? 0;
+  const recentEditsWithoutClaimBefore =
+    recent.recent_stats.edits_with_file_path - recent.recent_stats.edits_claimed_before;
+  const recentClaimMissReasons = claimMissReasonsPayload(
+    recent.recent_stats.claim_miss_reasons,
+    recentEditsWithoutClaimBefore,
+  );
   const sessionBindingMissing = stats.session_binding_missing ?? 0;
   const claimMatchSources = claimMatchSourcesPayload(stats.claim_match_sources);
   const claimMissReasons = claimMissReasonsPayload(
@@ -1317,6 +1367,12 @@ function claimBeforeEditPayload(
     task_claim_file_calls: taskClaimFileCalls,
     hook_capable_edits: stats.edits_with_file_path,
     pre_tool_use_signals: preToolUseSignals,
+    recent_task_claim_file_calls: recent.recent_task_claim_file_calls,
+    recent_hook_capable_edits: recent.recent_stats.edits_with_file_path,
+    recent_pre_tool_use_signals: recentPreToolUseSignals,
+    recent_pre_tool_use_missing: recentClaimMissReasons.pre_tool_use_missing,
+    live_file_contentions: recent.live_file_contentions,
+    dirty_contended_files: recent.dirty_contended_files,
   });
   const sessionBindingHint =
     sessionBindingMissing > 0
@@ -1338,6 +1394,15 @@ function claimBeforeEditPayload(
     claim_before_edit_ratio:
       status === 'available' ? ratio(stats.edits_claimed_before, stats.edits_with_file_path) : null,
     pre_tool_use_signals: preToolUseSignals,
+    old_telemetry_pollution: rootCause?.kind === 'old_telemetry_pollution',
+    recent_window_hours: recent.recent_window_hours,
+    recent_hook_capable_edits: recent.recent_stats.edits_with_file_path,
+    recent_pre_tool_use_missing: recentClaimMissReasons.pre_tool_use_missing,
+    recent_pre_tool_use_signals: recentPreToolUseSignals,
+    recent_claim_before_edit_rate:
+      recent.recent_stats.edit_tool_calls === 0
+        ? null
+        : ratio(recent.recent_stats.edits_claimed_before, recent.recent_stats.edits_with_file_path),
     session_binding_missing: sessionBindingMissing,
     edit_source_breakdown: {
       colony_post_tool_edits: stats.edit_tool_calls,
@@ -1360,6 +1425,12 @@ function lifecycleBridgeRootCause(input: {
   task_claim_file_calls: number;
   hook_capable_edits: number;
   pre_tool_use_signals: number;
+  recent_task_claim_file_calls: number;
+  recent_hook_capable_edits: number;
+  recent_pre_tool_use_signals: number;
+  recent_pre_tool_use_missing: number;
+  live_file_contentions: number;
+  dirty_contended_files: number;
 }): RootCauseSummary | null {
   if (input.task_claim_file_calls < LIFECYCLE_BRIDGE_MISSING_MIN_TASK_CLAIM_FILE_CALLS) {
     return null;
@@ -1369,6 +1440,18 @@ function lifecycleBridgeRootCause(input: {
   }
   if (!isNearZeroPreToolUseSignals(input.pre_tool_use_signals, input.hook_capable_edits)) {
     return null;
+  }
+  const liveStateClean = input.live_file_contentions === 0 && input.dirty_contended_files === 0;
+  const noFreshBadEdits =
+    input.recent_hook_capable_edits === 0 || input.recent_pre_tool_use_missing === 0;
+  if (liveStateClean && noFreshBadEdits) {
+    return {
+      kind: 'old_telemetry_pollution',
+      summary: OLD_TELEMETRY_POLLUTION_ROOT_CAUSE,
+      evidence: `hook_capable_edits=${input.hook_capable_edits}, recent_hook_capable_edits=${input.recent_hook_capable_edits}, recent_pre_tool_use_missing=${input.recent_pre_tool_use_missing}, live_file_contentions=${input.live_file_contentions}, dirty_contended_files=${input.dirty_contended_files}`,
+      action:
+        'Wait for older telemetry to age out of the selected health window, or narrow --hours when checking current bridge state.',
+    };
   }
   return {
     kind: 'lifecycle_bridge_missing',
@@ -1545,6 +1628,7 @@ function formatClaimBeforeEdit(payload: ClaimBeforeEditPayload): string[] {
   const lines = [`  task_claim_file calls: ${payload.task_claim_file_calls}`];
   if (payload.status === 'no_data') {
     lines.push(kleur.dim('  n/a (no edit tool observations in window)'));
+    lines.push(formatRecentClaimBeforeEdit(payload));
     lines.push(...formatEditSourceBreakdown(payload));
     if (payload.install_hint) lines.push(kleur.yellow(`  ${payload.install_hint}`));
     return lines;
@@ -1553,6 +1637,7 @@ function formatClaimBeforeEdit(payload: ClaimBeforeEditPayload): string[] {
     lines.push(
       `  not available (${payload.edits_with_file_path} / ${payload.edit_tool_calls} edit calls include file_path metadata)`,
     );
+    lines.push(formatRecentClaimBeforeEdit(payload));
     lines.push(...formatEditSourceBreakdown(payload));
     if (payload.install_hint) lines.push(kleur.yellow(`  ${payload.install_hint}`));
     return lines;
@@ -1572,6 +1657,7 @@ function formatClaimBeforeEdit(payload: ClaimBeforeEditPayload): string[] {
   lines.push(
     `  telemetry: edits_with_claim=${payload.edits_with_claim}, edits_missing_claim=${payload.edits_missing_claim}, auto_claimed_before_edit=${payload.auto_claimed_before_edit}, pre_tool_use_signals=${payload.pre_tool_use_signals}`,
   );
+  lines.push(formatRecentClaimBeforeEdit(payload));
   lines.push(...formatClaimMatchSources(payload));
   lines.push(...formatClaimMissReasons(payload.claim_miss_reasons));
   lines.push(...formatNearestClaimExamples(payload.nearest_claim_examples));
@@ -1585,6 +1671,10 @@ function formatClaimBeforeEdit(payload: ClaimBeforeEditPayload): string[] {
     lines.push(kleur.yellow(`  ${payload.install_hint}`));
   }
   return lines;
+}
+
+function formatRecentClaimBeforeEdit(payload: ClaimBeforeEditPayload): string {
+  return `  recent ${payload.recent_window_hours}h: hook_capable_edits=${payload.recent_hook_capable_edits}, pre_tool_use_signals=${payload.recent_pre_tool_use_signals}, pre_tool_use_missing=${payload.recent_pre_tool_use_missing}, claim-before-edit=${formatPercent(payload.recent_claim_before_edit_rate)}`;
 }
 
 function formatClaimMatchSources(payload: ClaimBeforeEditPayload): string[] {
@@ -1828,7 +1918,7 @@ function healthActionHints(payload: ColonyHealthPayloadWithoutHints): ActionHint
       action: claimBeforeEdit.root_cause.action,
       readiness_scope: 'execution_safety',
       priority: 5,
-      command: claimBeforeEdit.root_cause.command,
+      command: claimBeforeEdit.root_cause.command ?? LIFECYCLE_BRIDGE_COMMAND,
       prompt: codexPrompt({
         goal: 'wire the runtime lifecycle bridge before file mutation',
         current: claimBeforeEdit.root_cause.evidence,
@@ -1863,6 +1953,7 @@ function healthActionHints(payload: ColonyHealthPayloadWithoutHints): ActionHint
       }),
     });
   } else if (
+    !claimBeforeEdit.old_telemetry_pollution &&
     preToolUseMissingDominates &&
     isBelowTarget(claimBeforeEdit.claim_before_edit_ratio, TARGET_CLAIM_BEFORE_EDIT)
   ) {
@@ -1889,7 +1980,8 @@ function healthActionHints(payload: ColonyHealthPayloadWithoutHints): ActionHint
       }),
     });
   } else if (isBelowTarget(claimBeforeEdit.claim_before_edit_ratio, TARGET_CLAIM_BEFORE_EDIT)) {
-    const missingHook = claimBeforeEdit.likely_missing_hook;
+    const missingHook =
+      claimBeforeEdit.likely_missing_hook && !claimBeforeEdit.old_telemetry_pollution;
     const sessionBindingMissing = claimBeforeEdit.session_binding_missing > 0;
     hints.push({
       metric: 'claim-before-edit',
@@ -1897,7 +1989,9 @@ function healthActionHints(payload: ColonyHealthPayloadWithoutHints): ActionHint
       current: formatPercent(claimBeforeEdit.claim_before_edit_ratio),
       target: `${formatPercent(TARGET_CLAIM_BEFORE_EDIT)}+`,
       action: missingHook
-        ? 'PreToolUse auto-claim hook is not firing for hook-capable edits. Reinstall and restart the editor; PreToolUse will auto-claim before edits.'
+        ? claimBeforeEdit.old_telemetry_pollution
+          ? OLD_TELEMETRY_POLLUTION_ROOT_CAUSE
+          : 'PreToolUse auto-claim hook is not firing for hook-capable edits. Reinstall and restart the editor; PreToolUse will auto-claim before edits.'
         : sessionBindingMissing
           ? 'PreToolUse is firing, but session binding is missing. Restart the editor so SessionStart binds the active session before relying on auto-claim.'
           : 'Call task_claim_file for touched files before Edit or Write tool use.',
