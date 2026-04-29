@@ -791,7 +791,7 @@ Directed-message workflow: `task_message` -> `attention_inbox` / `task_messages`
 
 ## `task_messages`
 
-Read unread messages. Lists messages addressed to you across tasks you participate in (or scoped with `task_ids`). Compact shape includes `reply_tool` and `mark_read_tool` action hints; fetch full bodies via `get_observations`. Does **not** mark as read; call `task_message_mark_read` explicitly so an agent can peek at its inbox during planning without burning the "you have new mail" signal. Retracted messages and broadcasts already claimed by other agents are filtered out of every recipient's view.
+Read unread messages. Lists messages addressed to you across tasks you participate in (or scoped with `task_ids`). Compact shape includes `reply_tool`, `suggested_reply_args`, and `mark_read_tool` action hints; fetch full bodies via `get_observations`. Does **not** mark as read; call `task_message_mark_read` explicitly so an agent can peek at its inbox during planning without burning the "you have new mail" signal. Retracted messages and broadcasts already claimed by other agents are filtered out of every recipient's view.
 
 ```json
 {
@@ -806,7 +806,7 @@ Read unread messages. Lists messages addressed to you across tasks you participa
 }
 ```
 
-Returns `[ { id, task_id, ts, from_session_id, from_agent, to_agent, to_session_id, urgency, status, reply_to, preview, expires_at, is_claimable_broadcast, claimed_by_session_id, claimed_by_agent } ]`, newest-first. `unread_only: true` is the default-inbox shape used by `attention_inbox`: expired unread rows are hidden there. With `unread_only: false`, `status` reflects the effective audit state: an `unread` row past its TTL surfaces as `expired` even if the on-disk status hasn't been rewritten yet.
+Returns `[ { id, task_id, ts, from_session_id, from_agent, to_agent, to_session_id, urgency, status, reply_to, preview, expires_at, is_claimable_broadcast, claimed_by_session_id, claimed_by_agent, reply_tool, suggested_reply_args, mark_read_tool } ]`, newest-first. `unread_only: true` is the default-inbox shape used by `attention_inbox`: expired unread rows are hidden there. With `unread_only: false`, `status` reflects the effective audit state: an `unread` row past its TTL surfaces as `expired` even if the on-disk status hasn't been rewritten yet.
 
 ## `task_message_mark_read`
 
@@ -935,6 +935,16 @@ Unread `task_message` entries include compact action hints so recipients do not 
   "task_id": 17,
   "urgency": "needs_reply",
   "reply_tool": "task_message",
+  "suggested_reply_args": {
+    "task_id": 17,
+    "session_id": "sess_abc",
+    "agent": "claude",
+    "to_agent": "any",
+    "to_session_id": "sess_xyz",
+    "reply_to": 401,
+    "urgency": "fyi",
+    "content": "..."
+  },
   "reply_args": {
     "task_id": 17,
     "session_id": "sess_abc",

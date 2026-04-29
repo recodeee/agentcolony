@@ -186,6 +186,16 @@ describe('buildAttentionInbox', () => {
     const needsReply = inbox.unread_messages.find((m) => m.id === needsReplyId);
     expect(needsReply).toMatchObject({
       reply_tool: 'task_message',
+      suggested_reply_args: {
+        task_id: thread.task_id,
+        session_id: 'codex',
+        agent: 'codex',
+        to_agent: 'any',
+        to_session_id: 'claude',
+        reply_to: needsReplyId,
+        urgency: 'fyi',
+        content: '...',
+      },
       reply_with_tool: 'task_message',
       reply_args: {
         task_id: thread.task_id,

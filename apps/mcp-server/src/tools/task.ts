@@ -402,7 +402,7 @@ function looksLikeDirectedCoordination(content: string): boolean {
       normalized,
     ) ||
     /\?/.test(normalized);
-  return mentionsAgent && asksForActionOrReply;
+  return mentionsAgent || asksForActionOrReply;
 }
 
 function taskPostHint(content: string): string {
