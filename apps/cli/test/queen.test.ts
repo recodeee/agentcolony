@@ -314,6 +314,9 @@ describe('colony queen CLI', () => {
     expect(output).toContain('Wave 1 has 2 stalled subtasks');
     expect(output).toContain('Wave 2 is blocked by Wave 1');
     expect(output).toContain('Finalizer waiting on 3 subtasks');
+    expect(output).toContain('Plan validation:');
+    expect(output).toContain('ordered-sweep: 1 finding(s), errors 0, warnings 1, info 0');
+    expect(output).toContain('warning: dirty worktree touches planned file: src/ordered-0.ts');
 
     const settings = loadSettings();
     await withStore(settings, (store) => {
@@ -423,6 +426,27 @@ async function seedOrderedSweepPlan(): Promise<void> {
       kind: 'plan-config',
       content: 'plan ordered-sweep config: auto_archive=false',
       metadata: { plan_slug: 'ordered-sweep', auto_archive: false },
+    });
+    store.addObservation({
+      session_id: 'queen@ordered',
+      task_id: parent.task_id,
+      kind: 'plan-validation',
+      content: 'plan ordered-sweep validation: 1 finding(s), blocking=false',
+      metadata: {
+        generated_at: new Date(SWEEP_NOW).toISOString(),
+        blocking: false,
+        finding_count: 1,
+        counts: { error: 0, warning: 1, info: 0 },
+        findings: [
+          {
+            code: 'dirty_worktree_touches_planned_file',
+            severity: 'warning',
+            message: 'dirty worktree touches planned file: src/ordered-0.ts',
+            file_path: 'src/ordered-0.ts',
+            subtask_index: 0,
+          },
+        ],
+      },
     });
 
     const subtasks = [
