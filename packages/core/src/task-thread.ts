@@ -604,6 +604,27 @@ export class TaskThread {
         );
       }
     }
+    const quotaPendingClaimFiles =
+      meta.reason === 'quota_exhausted'
+        ? Array.from(
+            new Set(
+              this.claims()
+                .filter((claim) => claim.session_id === args.from_session_id)
+                .filter((claim) => claim.state === 'active')
+                .map((claim) => claim.file_path)
+                .filter((path) => !meta.released_files.includes(path))
+                .filter((path) => !meta.transferred_files.includes(path)),
+            ),
+          )
+        : [];
+    if (meta.reason === 'quota_exhausted' && meta.quota_context) {
+      meta.quota_context = {
+        ...meta.quota_context,
+        claimed_files: Array.from(
+          new Set([...meta.quota_context.claimed_files, ...quotaPendingClaimFiles]),
+        ),
+      };
+    }
     return this.store.storage.transaction(() => {
       for (const path of meta.released_files) {
         this.store.storage.releaseClaim({
@@ -626,6 +647,31 @@ export class TaskThread {
         task_id: this.task_id,
         metadata: meta as unknown as Record<string, unknown>,
       });
+      for (const path of quotaPendingClaimFiles) {
+        this.store.storage.markClaimHandoffPending({
+          task_id: this.task_id,
+          file_path: path,
+          session_id: args.from_session_id,
+          expires_at: meta.expires_at,
+          handoff_observation_id: id,
+        });
+        this.store.addObservation({
+          session_id: args.from_session_id,
+          kind: 'claim-weakened',
+          content: `claim ${path} weakened to handoff_pending by quota_exhausted handoff #${id}`,
+          task_id: this.task_id,
+          reply_to: id,
+          metadata: {
+            kind: 'claim-weakened',
+            file_path: path,
+            ownership_strength: 'weak',
+            state: 'handoff_pending',
+            reason: 'quota_exhausted',
+            handoff_observation_id: id,
+            expires_at: meta.expires_at,
+          },
+        });
+      }
       this.store.storage.touchTask(this.task_id, now);
       return id;
     });
@@ -686,8 +732,20 @@ export class TaskThread {
       );
     }
 
+    const inheritedQuotaPendingFiles =
+      meta.reason === 'quota_exhausted'
+        ? this.claims()
+            .filter((claim) => claim.session_id === meta.from_session_id)
+            .filter((claim) => claim.state === 'handoff_pending')
+            .filter((claim) => claim.handoff_observation_id === handoff_observation_id)
+            .map((claim) => claim.file_path)
+        : [];
+    const filesToClaim = Array.from(
+      new Set([...meta.transferred_files, ...inheritedQuotaPendingFiles]),
+    );
+
     this.store.storage.transaction(() => {
-      for (const path of meta.transferred_files) {
+      for (const path of filesToClaim) {
         this.store.storage.claimFile({
           task_id: this.task_id,
           file_path: path,
@@ -1652,7 +1710,25 @@ function renderHandoffContent(m: HandoffMetadata): string {
   if (m.released_files.length) {
     lines.push(`Claims released: ${m.released_files.join(', ')}`);
   }
+  if (m.quota_context) {
+    lines.push(
+      `Quota context: branch=${m.quota_context.branch ?? 'unknown'} dirty_files=${formatInlineList(
+        m.quota_context.dirty_files,
+      )} claimed_files=${formatInlineList(m.quota_context.claimed_files)}`,
+    );
+    if (m.quota_context.last_verification) {
+      lines.push(
+        `Last verification: ${m.quota_context.last_verification.command ?? 'unknown'} -> ${
+          m.quota_context.last_verification.result ?? 'unknown'
+        }`,
+      );
+    }
+  }
   return lines.join('\n');
+}
+
+function formatInlineList(values: string[]): string {
+  return values.length > 0 ? values.join(', ') : 'none';
 }
 
 // 30 minutes — the "what was I just doing" window. Long enough to catch a

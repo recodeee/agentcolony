@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import {
   type HandoffMetadata,
   type MemoryStore,
@@ -85,6 +86,7 @@ function buildQuotaHandoffContext(
     .claims()
     .filter((claim) => claim.session_id === input.session_id)
     .map((claim) => claim.file_path);
+  const dirtyFiles = readDirtyFiles(input, metadata, result);
   return {
     agent,
     session_id: input.session_id,
@@ -94,14 +96,7 @@ function buildQuotaHandoffContext(
       readString(metadata.worktree_path) ?? readString(metadata.worktreePath) ?? input.cwd ?? null,
     task_id: thread.task_id,
     claimed_files: claimedFiles,
-    dirty_files: readStringList(
-      firstDefined(
-        metadata.dirty_files,
-        metadata.dirtyFiles,
-        result.dirty_files,
-        result.dirtyFiles,
-      ),
-    ),
+    dirty_files: dirtyFiles,
     last_command:
       readString(firstDefined(metadata.last_command, metadata.lastCommand, result.last_command)) ??
       null,
@@ -113,6 +108,52 @@ function buildQuotaHandoffContext(
     suggested_next_step: `Accept this quota_exhausted handoff, inspect claimed/dirty files, then continue from the latest task timeline. Runtime status: blocked_by_runtime_limit. Cause: ${usageReason}`,
     handoff_ttl_ms: 2 * 60 * 60 * 1000,
   };
+}
+
+function readDirtyFiles(
+  input: HookInput,
+  metadata: Record<string, unknown>,
+  result: Record<string, unknown>,
+): string[] {
+  return Array.from(
+    new Set([
+      ...readStringList(
+        firstDefined(
+          metadata.dirty_files,
+          metadata.dirtyFiles,
+          result.dirty_files,
+          result.dirtyFiles,
+        ),
+      ),
+      ...gitStatusDirtyFiles(input.cwd),
+    ]),
+  );
+}
+
+function gitStatusDirtyFiles(cwd: string | undefined): string[] {
+  if (!cwd) return [];
+  try {
+    const output = execFileSync('git', ['status', '--short', '--untracked-files=all'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2_000,
+    });
+    return output
+      .split('\n')
+      .map((line) => parseGitStatusPath(line))
+      .filter((path): path is string => path !== null);
+  } catch {
+    return [];
+  }
+}
+
+function parseGitStatusPath(line: string): string | null {
+  if (!line.trim()) return null;
+  const path = line.length > 3 ? line.slice(3).trim() : line.trim();
+  if (!path) return null;
+  const renameIndex = path.lastIndexOf(' -> ');
+  return renameIndex >= 0 ? path.slice(renameIndex + 4).trim() : path;
 }
 
 function detectUsageLimitReason(input: HookInput): string | null {

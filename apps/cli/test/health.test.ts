@@ -1085,6 +1085,16 @@ describe('colony health payload', () => {
       current: '1 conflict(s), 1 dirty',
       command: 'colony health --json',
     });
+    expect(payload.action_hints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metric: 'paused dirty lanes',
+          current: '2 paused lane(s), 1 dirty contended file(s)',
+          action:
+            'paused lanes with dirty files should be finished, handed off, or cleaned before broad verification.',
+        }),
+      ]),
+    );
 
     const text = formatColonyHealthOutput(payload);
     expect(text).toContain('Live contention health');
@@ -1108,6 +1118,9 @@ describe('colony health payload', () => {
     expect(text).toContain('src/shared.ts: release/weaken owner claude-right-session');
     expect(text).toContain('command: colony lane takeover claude-right-session');
     expect(text).toContain('tool: owner can call task_hand_off');
+    expect(text).toContain(
+      'paused lanes with dirty files should be finished, handed off, or cleaned before broad verification.',
+    );
   });
 
   it('classifies known active and unknown protected contention owners', () => {

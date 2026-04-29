@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -112,6 +113,8 @@ describe('OMX lifecycle envelope', () => {
 
   it('records a first-class quota-exhausted handoff from stop_intent', async () => {
     const repo = fakeGitRepo('repo-quota', 'agent/codex/quota-stop');
+    mkdirSync(join(repo, 'src'), { recursive: true });
+    writeFileSync(join(repo, 'src', 'git-only.ts'), 'export const dirty = true;\n');
     const bind = await runOmxLifecycleEnvelope(
       envelope({
         event_id: 'evt_quota_bind',
@@ -171,7 +174,7 @@ describe('OMX lifecycle envelope', () => {
         worktree_path: repo,
         task_id: taskId,
         claimed_files: ['src/runtime.ts'],
-        dirty_files: ['src/runtime.ts'],
+        dirty_files: expect.arrayContaining(['src/runtime.ts', 'src/git-only.ts']),
         last_command: 'pnpm test',
         last_tool: 'Bash',
         last_verification: {
@@ -182,6 +185,14 @@ describe('OMX lifecycle envelope', () => {
     });
     expect(meta.handoff_ttl_ms).toBeGreaterThan(0);
     expect(meta.quota_context.suggested_next_step).toContain('blocked_by_runtime_limit');
+    expect(store.storage.getClaim(taskId, 'src/runtime.ts')).toMatchObject({
+      session_id: 'codex@quota',
+      state: 'handoff_pending',
+      handoff_observation_id: handoff?.id,
+    });
+    expect(handoff?.content).toContain('dirty_files=src/runtime.ts');
+    expect(handoff?.content).toContain('src/git-only.ts');
+    expect(handoff?.content).toContain('claimed_files=src/runtime.ts');
   });
 });
 
@@ -202,7 +213,7 @@ function envelope(overrides: Record<string, unknown>): Record<string, unknown> {
 
 function fakeGitRepo(name: string, branch: string): string {
   const repo = join(dir, name);
-  mkdirSync(join(repo, '.git'), { recursive: true });
-  writeFileSync(join(repo, '.git', 'HEAD'), `ref: refs/heads/${branch}\n`, 'utf8');
+  mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['init', '--quiet', '-b', branch, repo], { stdio: 'ignore' });
   return repo;
 }
