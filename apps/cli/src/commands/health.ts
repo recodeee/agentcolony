@@ -726,9 +726,10 @@ export function formatColonyHealthOutput(
       lines.push(
         `    ${blocker.plan_slug}/sub-${blocker.subtask_index} task #${blocker.task_id} ${blocker.file_path} owner=${blocker.owner_session_id} age=${blocker.age_minutes}m -> unlock candidate sub-${blocker.unlock_candidate.subtask_index}`,
       );
-      if (plan.replacement_recommendation) {
+      const replacement = payload.queen_wave_health.replacement_recommendation;
+      if (replacement) {
         lines.push(
-          `    replacement: ${plan.replacement_recommendation.recommended_replacement_agent} - ${plan.replacement_recommendation.reason}`,
+          `    replacement: ${replacement.recommended_replacement_agent} - ${replacement.reason}`,
         );
       }
     }
