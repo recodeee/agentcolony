@@ -1,9 +1,12 @@
 import { execFileSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { defaultSettings, loadSettings } from '@colony/config';
 import {
+  type CoordinationSweepResult,
   type HivemindSession,
   ProposalSystem,
   type WorktreeContentionReport,
+  buildCoordinationSweep,
   classifyClaimAge,
   currentSignalStrength,
   isSignalExpired,
@@ -13,6 +16,7 @@ import {
   signalMetadataFromObservation,
   signalMetadataFromProposal,
 } from '@colony/core';
+import { sweepQueenPlans } from '@colony/queen';
 import type {
   ClaimBeforeEditStats,
   ClaimMatchSources,
@@ -266,6 +270,37 @@ interface RootCauseSummary {
   evidence: string;
   action: string;
   command: string;
+}
+
+interface HealthFixPlanStep {
+  title: string;
+  status: 'suggested' | 'planned' | 'ran' | 'skipped';
+  detail: string;
+  command?: string;
+}
+
+interface HealthFixPlanPayload {
+  generated_at: string;
+  mode: 'dry-run' | 'apply';
+  safety: {
+    mutates_claims: false;
+    installs_hooks: false;
+    ran_coordination_sweep: boolean;
+    ran_queen_sweep: boolean;
+  };
+  current: {
+    pre_tool_use_missing: number;
+    pre_tool_use_missing_dominates: boolean;
+    stale_claims: number;
+    expired_weak_claims: number;
+    live_contentions: number;
+    dirty_contended_files: number;
+    stale_downstream_blockers: number;
+  };
+  steps: HealthFixPlanStep[];
+  verification_commands: string[];
+  coordination_sweep?: CoordinationSweepResult | undefined;
+  queen_sweep?: ReturnType<typeof sweepQueenPlans> | undefined;
 }
 
 function codexPrompt(input: {
@@ -774,13 +809,61 @@ export function registerHealthCommand(program: Command): void {
     .command('health')
     .description('Show Colony adoption ratios from local DB evidence')
     .option('--hours <n>', 'Window size in hours', String(DEFAULT_HOURS))
+    .option('--repo-root <path>', 'repo root for fix-plan sweep commands (defaults to process.cwd())')
     .option('--json', 'emit structured JSON')
     .option('--prompts', 'emit compact Codex prompt snippets for next fixes')
     .option('--verbose', 'show lower-priority health follow-ups in next fixes')
+    .option('--fix-plan', 'print an execution-safety recovery plan instead of the full health report')
+    .option('--apply', 'with --fix-plan, run coordination and queen sweeps; never releases claims or installs hooks')
     .action(
-      async (opts: { hours: string; json?: boolean; prompts?: boolean; verbose?: boolean }) => {
+      async (opts: {
+        hours: string;
+        repoRoot?: string;
+        json?: boolean;
+        prompts?: boolean;
+        verbose?: boolean;
+        fixPlan?: boolean;
+        apply?: boolean;
+      }) => {
         const hours = parseHours(opts.hours);
         const settings = loadSettings();
+        const repoRoot = resolve(opts.repoRoot ?? process.cwd());
+
+        if (opts.fixPlan === true) {
+          const { withStore } = await import('../util/store.js');
+          await withStore(settings, (store) => {
+            const payload = buildColonyHealthPayload(store.storage, {
+              since: Date.now() - hours * 3_600_000,
+              window_hours: hours,
+              claim_stale_minutes: settings.claimStaleMinutes,
+              repo_root: repoRoot,
+            });
+            const coordinationSweep =
+              opts.apply === true
+                ? buildCoordinationSweep(store, {
+                    repo_root: repoRoot,
+                  })
+                : undefined;
+            const queenSweep =
+              opts.apply === true
+                ? sweepQueenPlans(store, {
+                    repo_root: repoRoot,
+                    auto_message: false,
+                  })
+                : undefined;
+            const fixPlan = buildHealthFixPlan(payload, {
+              repo_root: repoRoot,
+              apply: opts.apply === true,
+              ...(coordinationSweep !== undefined ? { coordination_sweep: coordinationSweep } : {}),
+              ...(queenSweep !== undefined ? { queen_sweep: queenSweep } : {}),
+            });
+            process.stdout.write(
+              `${opts.json === true ? JSON.stringify(fixPlan, null, 2) : formatHealthFixPlanOutput(fixPlan)}\n`,
+            );
+          });
+          return;
+        }
+
         const { withStorage } = await import('../util/store.js');
         await withStorage(
           settings,
@@ -789,6 +872,7 @@ export function registerHealthCommand(program: Command): void {
               since: Date.now() - hours * 3_600_000,
               window_hours: hours,
               claim_stale_minutes: settings.claimStaleMinutes,
+              repo_root: repoRoot,
             });
             const formatOptions = opts.json
               ? { json: true }
@@ -799,6 +883,163 @@ export function registerHealthCommand(program: Command): void {
         );
       },
     );
+}
+
+export function buildHealthFixPlan(
+  payload: ColonyHealthPayload,
+  options: {
+    repo_root: string;
+    apply: boolean;
+    coordination_sweep?: CoordinationSweepResult;
+    queen_sweep?: ReturnType<typeof sweepQueenPlans>;
+  },
+): HealthFixPlanPayload {
+  const claim = payload.task_claim_file_before_edits;
+  const preToolUseMissing = claim.claim_miss_reasons.pre_tool_use_missing;
+  const preToolUseMissingDominates = isDominantPreToolUseMiss(claim.claim_miss_reasons);
+  const healthCommand = `colony health --repo-root ${shellQuote(options.repo_root)} --json`;
+  const coordinationCommand = `colony coordination sweep --repo-root ${shellQuote(options.repo_root)} --json`;
+  const queenCommand = `colony queen sweep --repo-root ${shellQuote(options.repo_root)} --json`;
+  const steps: HealthFixPlanStep[] = [];
+
+  if (preToolUseMissingDominates) {
+    steps.push({
+      title: 'Reinstall/restart lifecycle hooks',
+      status: 'suggested',
+      detail:
+        'pre_tool_use_missing dominates claim misses; reinstall the affected IDE hooks, then restart the operator session before trusting claim-before-edit telemetry.',
+      command: 'colony install --ide codex  # then restart Codex/OMX',
+    });
+  } else {
+    steps.push({
+      title: 'Lifecycle hook reinstall',
+      status: 'skipped',
+      detail: 'pre_tool_use_missing does not dominate current claim misses.',
+    });
+  }
+
+  steps.push({
+    title: 'Inspect live contentions',
+    status:
+      payload.live_contention_health.live_file_contentions > 0 ||
+      payload.live_contention_health.dirty_contended_files > 0
+        ? 'suggested'
+        : 'skipped',
+    detail:
+      payload.live_contention_health.live_file_contentions > 0
+        ? 'Resolve same-file owners before broad verification; hand off, reclaim, or wait instead of overwriting another lane.'
+        : 'No live same-file contention is visible in current health.',
+    command: healthCommand,
+  });
+
+  if (options.apply) {
+    steps.push({
+      title: 'Run coordination sweep',
+      status: 'ran',
+      detail:
+        options.coordination_sweep === undefined
+          ? 'Coordination sweep result was not provided.'
+          : `stale=${options.coordination_sweep.summary.stale_claim_count}, expired/weak=${options.coordination_sweep.summary.expired_weak_claim_count}; ${options.coordination_sweep.recommended_action}`,
+      command: coordinationCommand,
+    });
+    steps.push({
+      title: 'Run queen sweep',
+      status: 'ran',
+      detail:
+        options.queen_sweep === undefined
+          ? 'Queen sweep result was not provided.'
+          : queenSweepSummary(options.queen_sweep),
+      command: queenCommand,
+    });
+  } else {
+    steps.push({
+      title: 'Run coordination sweep',
+      status: 'planned',
+      detail:
+        'Dry-run only: pass --apply to run this sweep. The command reports stale claims and keeps audit history.',
+      command: coordinationCommand,
+    });
+    steps.push({
+      title: 'Run queen sweep',
+      status: 'planned',
+      detail:
+        'Dry-run only: pass --apply to run this sweep. The command uses auto-message=false and does not mutate claims.',
+      command: queenCommand,
+    });
+  }
+
+  return {
+    generated_at: payload.generated_at,
+    mode: options.apply ? 'apply' : 'dry-run',
+    safety: {
+      mutates_claims: false,
+      installs_hooks: false,
+      ran_coordination_sweep: options.apply,
+      ran_queen_sweep: options.apply,
+    },
+    current: {
+      pre_tool_use_missing: preToolUseMissing,
+      pre_tool_use_missing_dominates: preToolUseMissingDominates,
+      stale_claims: payload.signal_health.stale_claims,
+      expired_weak_claims: payload.signal_health.expired_claims,
+      live_contentions: payload.live_contention_health.live_file_contentions,
+      dirty_contended_files: payload.live_contention_health.dirty_contended_files,
+      stale_downstream_blockers: payload.queen_wave_health.stale_claims_blocking_downstream,
+    },
+    steps,
+    verification_commands: [
+      healthCommand,
+      coordinationCommand,
+      queenCommand,
+      'pnpm smoke:codex-omx-pretool',
+    ],
+    coordination_sweep: options.coordination_sweep,
+    queen_sweep: options.queen_sweep,
+  };
+}
+
+export function formatHealthFixPlanOutput(plan: HealthFixPlanPayload): string {
+  const lines = [
+    kleur.bold('colony health --fix-plan'),
+    `mode: ${plan.mode}${plan.mode === 'dry-run' ? ' (no sweeps run)' : ' (sweeps run)'}`,
+    'safety: does not release claims; does not install hooks; queen sweep auto-message disabled',
+    '',
+    kleur.bold('Current health'),
+    `  pre_tool_use_missing: ${plan.current.pre_tool_use_missing}${plan.current.pre_tool_use_missing_dominates ? ' (dominates)' : ''}`,
+    `  stale claims:         ${plan.current.stale_claims}`,
+    `  expired/weak claims:  ${plan.current.expired_weak_claims}`,
+    `  live contentions:     ${plan.current.live_contentions}`,
+    `  dirty contended:      ${plan.current.dirty_contended_files}`,
+    `  stale downstream:     ${plan.current.stale_downstream_blockers}`,
+    '',
+    kleur.bold('Recovery plan'),
+  ];
+
+  plan.steps.forEach((step, index) => {
+    lines.push(`  ${index + 1}. [${step.status}] ${step.title}: ${step.detail}`);
+    if (step.command) lines.push(kleur.dim(`     cmd: ${step.command}`));
+  });
+
+  lines.push('', kleur.bold('Verification commands'));
+  for (const command of plan.verification_commands) {
+    lines.push(`  ${command}`);
+  }
+
+  return lines.join('\n');
+}
+
+function queenSweepSummary(result: ReturnType<typeof sweepQueenPlans>): string {
+  const items = result.flatMap((plan) => plan.items);
+  const stalled = items.filter((item) => item.reason === 'stalled').length;
+  const unclaimed = items.filter((item) => item.reason === 'unclaimed').length;
+  const ready = items.filter((item) => item.reason === 'ready-to-archive').length;
+  if (items.length === 0) return 'no queen plans need attention';
+  return `${result.length} plan(s) need attention; stalled=${stalled}, unclaimed=${unclaimed}, ready-to-archive=${ready}`;
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+=,-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function conversion(calls: ToolCallRow[], fromTool: string, toTool: string): ConversionPayload {
