@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360" role="img" aria-labelledby="title desc">
+  <title id="title">Colony startup and execution loop</title>
+  <desc id="desc">A six step workflow loop from hivemind context through attention inbox, ready work, plan claim, file claim, and working notes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08111c"/>
+      <stop offset="1" stop-color="#0d1117"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0L10 5L0 10Z" fill="#22d3ee"/>
+    </marker>
+    <style>
+      text{fill:#e5e7eb;font-family:Arial,sans-serif;letter-spacing:0}
+      .label{font-family:Arial,sans-serif;fill:#e5e7eb;letter-spacing:0}
+      .muted{fill:#94a3b8}
+      .mono{font-family:monospace;letter-spacing:0}
+      .step{fill:#0b0f14;stroke:#253040;stroke-width:1.2}
+      .active{fill:#052e2b;stroke:#34d399;stroke-width:1.8}
+      .flow{stroke:#22d3ee;stroke-width:2;fill:none;marker-end:url(#arrow)}
+      .flow2{stroke:#f59e0b;stroke-width:1.7;fill:none;marker-end:url(#arrow);stroke-dasharray:7 8}
+      .tiny{font-size:12px}
+    </style>
+  </defs>
+  <rect width="900" height="360" rx="22" fill="url(#bg)"/>
+  <rect x="1" y="1" width="898" height="358" rx="21" fill="none" stroke="#1f2937"/>
+  <text fill="#e5e7eb" class="label" x="34" y="44" font-size="25" font-weight="720">Coordination loop agents should actually run</text>
+  <text fill="#94a3b8" class="label muted" x="34" y="68" font-size="14">Compact routing first; hydrate only when the returned IDs matter.</text>
+  <circle cx="450" cy="196" r="98" fill="#22d3ee" opacity="0.04"/>
+  <circle cx="450" cy="196" r="70" fill="#34d399" opacity="0.05"/>
+  <g>
+    <path class="flow" d="M298 113C350 72 550 72 603 113"/>
+    <path class="flow" d="M664 153C710 207 634 295 560 300"/>
+    <path class="flow" d="M482 303C407 324 292 283 278 212"/>
+    <path class="flow" d="M261 151C250 125 263 104 298 113"/>
+    <path class="flow2" d="M380 226C421 252 486 252 522 226"/>
+  </g>
+  <g transform="translate(134 111)">
+    <rect class="active" width="190" height="82" rx="16"/>
+    <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="20" y="31">1 hivemind_context</text>
+    <text font-size="12" fill="#94a3b8" class="label muted tiny" x="20" y="57">who is active, hot, or owned</text>
+  </g>
+  <g transform="translate(356 63)">
+    <rect class="step" width="190" height="82" rx="16"/>
+    <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="20" y="31">2 attention_inbox</text>
+    <text font-size="12" fill="#94a3b8" class="label muted tiny" x="20" y="57">handoffs, blockers, stale lanes</text>
+  </g>
+  <g transform="translate(587 111)">
+    <rect class="step" width="190" height="82" rx="16"/>
+    <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="20" y="31">3 task_ready_for_agent</text>
+    <text font-size="12" fill="#94a3b8" class="label muted tiny" x="20" y="57">pull work by fit, not browsing</text>
+  </g>
+  <g transform="translate(587 239)">
+    <rect class="step" width="190" height="82" rx="16"/>
+    <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="20" y="31">4 task_plan_claim</text>
+    <text font-size="12" fill="#94a3b8" class="label muted tiny" x="20" y="57">take one unblocked wave slice</text>
+  </g>
+  <g transform="translate(356 239)">
+    <rect class="step" width="190" height="82" rx="16"/>
+    <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="20" y="31">5 task_claim_file</text>
+    <text font-size="12" fill="#94a3b8" class="label muted tiny" x="20" y="57">make ownership visible first</text>
+  </g>
+  <g transform="translate(134 239)">
+    <rect class="step" width="190" height="82" rx="16"/>
+    <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="20" y="31">6 task_note_working</text>
+    <text font-size="12" fill="#94a3b8" class="label muted tiny" x="20" y="57">leave resumable state</text>
+  </g>
+  <g transform="translate(379 158)">
+    <rect x="0" y="0" width="142" height="78" rx="18" fill="#0b0f14" stroke="#334155"/>
+    <text fill="#e5e7eb" class="label" x="41" y="33" font-size="18" font-weight="720">Colony</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="24" y="57">less list, more pull</text>
+  </g>
+</svg>

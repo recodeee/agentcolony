@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="506" viewBox="0 0 900 506" role="img" aria-labelledby="title desc">
+  <title id="title">Colony live graph</title>
+  <desc id="desc">A dark viewer mockup based on the live Colony graph: central agent clusters, typed edges for messages, handoffs, shares, claims, and a glance panel.</desc>
+  <defs>
+    <radialGradient id="greenGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#bbf7d0" stop-opacity="0.72"/>
+      <stop offset="0.35" stop-color="#34d399" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#34d399" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pinkGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fb7185" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fb7185" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <style>
+      text{fill:#e5e7eb;font-family:Arial,sans-serif;letter-spacing:0}
+      .label{font-family:Arial,sans-serif;fill:#e5e7eb;letter-spacing:0}
+      .muted{fill:#94a3b8}
+      .mono{font-family:monospace;letter-spacing:0}
+      .panel{fill:#090b0e;stroke:#242a35;stroke-width:1.1}
+      .side{fill:#0d0d10;stroke:#242a35;stroke-width:1}
+      .grid{stroke:#17202b;stroke-width:0.8}
+      .share{stroke:#34d399;stroke-width:1.7;fill:none;opacity:0.6}
+      .claim{stroke:#fb7185;stroke-width:1.3;fill:none;opacity:0.55;stroke-dasharray:2 4}
+      .handoff{stroke:#fbbf24;stroke-width:1.5;fill:none;opacity:0.5;stroke-dasharray:5 6}
+      .message{stroke:#67e8f9;stroke-width:1.5;fill:none;opacity:0.58}
+      .participant{stroke:#94a3b8;stroke-width:1;fill:none;opacity:0.35}
+      .node{fill:#9ae6b4;stroke:#264f3d;stroke-width:1}
+      .node2{fill:#c4b5fd;stroke:#4c1d95;stroke-width:1}
+      .node3{fill:#fda4af;stroke:#7f1d1d;stroke-width:1}
+      .tiny{font-size:10px}
+      .small{font-size:12px}
+    </style>
+  </defs>
+  <rect width="900" height="506" rx="20" fill="#050607"/>
+  <rect x="1" y="1" width="898" height="504" rx="19" fill="none" stroke="#1f2937"/>
+  <g transform="translate(18 18)">
+    <text fill="#e5e7eb" class="label" x="0" y="20" font-size="20" font-weight="720">Colony Graph</text>
+    <text fill="#94a3b8" class="label muted" x="0" y="43" font-size="12">Force-directed view of sessions and typed relationships. Pin nodes, pan background, inspect active lanes.</text>
+  </g>
+  <g transform="translate(12 68)">
+    <rect class="panel" width="704" height="424" rx="12"/>
+    <g opacity="0.65">
+      <path class="grid" d="M0 42H704M0 84H704M0 126H704M0 168H704M0 210H704M0 252H704M0 294H704M0 336H704M0 378H704"/>
+      <path class="grid" d="M42 0V424M84 0V424M126 0V424M168 0V424M210 0V424M252 0V424M294 0V424M336 0V424M378 0V424M420 0V424M462 0V424M504 0V424M546 0V424M588 0V424M630 0V424M672 0V424"/>
+    </g>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="16" y="21">COLONY GRAPH - LIVE</text>
+    <g transform="translate(296 33)">
+      <rect x="0" y="0" width="105" height="24" rx="12" fill="#0e1117" stroke="#293241"/>
+      <rect x="3" y="3" width="31" height="18" rx="9" fill="#2a2d33"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="13" y="16">ALL</text>
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="46" y="16">ACTIVE</text>
+    </g>
+    <g transform="translate(471 20)">
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="0" y="0">NODES</text>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="40" y="0">174</text>
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="74" y="0">EDGES</text>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="114" y="0">237</text>
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="150" y="0">ACTIVE</text>
+      <text font-size="12" class="label mono tiny" fill="#34d399" x="198" y="0">6</text>
+    </g>
+    <g transform="translate(330 236)">
+      <circle r="66" fill="url(#greenGlow)" opacity="0.7"/>
+      <circle class="node" r="10"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="16" y="4">codex - 019dd8</text>
+      <g>
+        <path class="participant" d="M0 0L-94 -60M0 0L-88 -18M0 0L-66 44M0 0L-14 -94M0 0L38 -80M0 0L76 -44M0 0L94 8M0 0L63 55M0 0L9 88"/>
+        <path class="message" d="M0 0L122 65L77 25Z"/>
+        <path class="share" d="M0 0L116 -8L169 49"/>
+      </g>
+    </g>
+    <g transform="translate(293 260)">
+      <circle r="54" fill="url(#pinkGlow)" opacity="0.65"/>
+      <circle class="node3" r="8"/>
+      <path class="claim" d="M0 0L-72 -18M0 0L-84 -2M0 0L-77 22M0 0L-56 48M0 0L-18 67M0 0L24 65M0 0L58 43M0 0L78 9M0 0L65 -24M0 0L29 -54M0 0L-16 -66M0 0L-55 -48"/>
+    </g>
+    <g transform="translate(320 162)">
+      <circle class="node2" r="5"/>
+      <path class="handoff" d="M0 0L-88 -26L-42 -72L30 -58M0 0L54 -92L91 -45"/>
+      <circle class="node" cx="-88" cy="-26" r="4"/>
+      <circle class="node" cx="-42" cy="-72" r="4"/>
+      <circle class="node" cx="30" cy="-58" r="4"/>
+      <circle class="node" cx="54" cy="-92" r="4"/>
+      <circle class="node" cx="91" cy="-45" r="4"/>
+    </g>
+    <g transform="translate(515 259)">
+      <circle class="node" r="5"/>
+      <path class="share" d="M0 0L-44 21M0 0L30 -23M0 0L57 18M0 0L81 -9M0 0L21 69M0 0L-18 58"/>
+      <circle class="node" cx="-44" cy="21" r="6"/>
+      <circle class="node" cx="30" cy="-23" r="5"/>
+      <circle class="node" cx="57" cy="18" r="4"/>
+      <circle class="node" cx="81" cy="-9" r="4"/>
+      <circle class="node" cx="21" cy="69" r="7"/>
+      <circle class="node" cx="-18" cy="58" r="6"/>
+    </g>
+    <g transform="translate(228 209)" opacity="0.9">
+      <path class="participant" d="M0 0L38 -37M0 0L-42 -1M0 0L-65 22M0 0L-34 51M0 0L30 41M0 0L59 4"/>
+      <circle class="node" r="6"/>
+      <circle class="node" cx="38" cy="-37" r="4"/>
+      <circle class="node2" cx="-42" cy="-1" r="4"/>
+      <circle class="node2" cx="-65" cy="22" r="4"/>
+      <circle class="node3" cx="-34" cy="51" r="4"/>
+      <circle class="node" cx="30" cy="41" r="5"/>
+      <circle class="node" cx="59" cy="4" r="4"/>
+    </g>
+    <g filter="url(#blur)" opacity="0.75">
+      <circle cx="330" cy="236" r="9" fill="#bbf7d0"/>
+      <circle cx="293" cy="260" r="8" fill="#fda4af"/>
+      <circle cx="515" cy="259" r="6" fill="#34d399"/>
+    </g>
+  </g>
+  <g transform="translate(730 68)">
+    <rect class="side" width="158" height="424" rx="12"/>
+    <text font-size="12" fill="#94a3b8" class="label muted mono small" x="14" y="28">COLONY AT A GLANCE</text>
+    <g transform="translate(14 43)">
+      <rect x="0" y="0" width="42" height="34" rx="5" fill="#0b0f14" stroke="#242a35"/>
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="7" y="13">SESS</text><text font-size="12" fill="#e5e7eb" class="label small" x="7" y="27" font-weight="720">174</text>
+      <rect x="48" y="0" width="42" height="34" rx="5" fill="#0b0f14" stroke="#242a35"/>
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="55" y="13">ACT</text><text font-size="12" class="label small" fill="#34d399" x="55" y="27" font-weight="720">6</text>
+      <rect x="96" y="0" width="42" height="34" rx="5" fill="#0b0f14" stroke="#242a35"/>
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="103" y="13">EDGE</text><text font-size="12" fill="#e5e7eb" class="label small" x="103" y="27" font-weight="720">237</text>
+    </g>
+    <g transform="translate(14 98)">
+      <rect x="0" y="0" width="130" height="122" rx="8" fill="#1a0c11" stroke="#9f1239"/>
+      <circle cx="10" cy="19" r="4" fill="#fb7185"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="20" y="22">STALLED - 34</text>
+      <rect x="14" y="34" width="102" height="23" rx="4" fill="#200d13" stroke="#4c1823"/>
+      <rect x="14" y="63" width="102" height="23" rx="4" fill="#200d13" stroke="#4c1823"/>
+      <rect x="14" y="92" width="102" height="23" rx="4" fill="#200d13" stroke="#4c1823"/>
+    </g>
+    <g transform="translate(14 244)">
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="0" y="0">LANE ACTIVITY</text>
+      <rect x="0" y="15" width="132" height="5" rx="3" fill="#172033"/>
+      <rect x="0" y="15" width="118" height="5" rx="3" fill="#f43f5e"/>
+      <circle cx="4" cy="38" r="3" fill="#fb7185"/><text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="12" y="41">stalled</text><text font-size="12" fill="#e5e7eb" class="label mono tiny" x="112" y="41">34</text>
+      <circle cx="4" cy="56" r="3" fill="#fbbf24"/><text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="12" y="59">unknown</text><text font-size="12" fill="#e5e7eb" class="label mono tiny" x="118" y="59">1</text>
+    </g>
+    <g transform="translate(14 326)">
+      <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="0" y="0">EDGE TYPES</text>
+      <circle cx="5" cy="21" r="4" fill="#94a3b8"/><text font-size="12" fill="#94a3b8" class="label muted small" x="17" y="25">participant</text>
+      <circle cx="5" cy="44" r="4" fill="#67e8f9"/><text font-size="12" fill="#94a3b8" class="label muted small" x="17" y="48">message</text>
+      <circle cx="5" cy="67" r="4" fill="#fbbf24"/><text font-size="12" fill="#94a3b8" class="label muted small" x="17" y="71">handoff</text>
+      <circle cx="5" cy="90" r="4" fill="#fb7185"/><text font-size="12" fill="#94a3b8" class="label muted small" x="17" y="94">claim</text>
+    </g>
+  </g>
+</svg>

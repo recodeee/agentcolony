@@ -167,7 +167,7 @@ Readiness pillars:
 The local viewer can render the running coordination graph: active agent sessions, tool calls, handoffs, messages, file claims, stalled lanes, and shared work traces.
 
 <p align="center">
-  <img src="docs/assets/colony-graph-live.png" alt="Colony live graph showing active agent sessions, MCP tool calls, handoffs, shares, and claims" width="900" />
+  <img src="docs/assets/colony-graph-live.svg" alt="Colony live graph showing active agent sessions, MCP tool calls, handoffs, shares, and claims" width="900" />
 </p>
 
 Use it when you need to see the swarm instead of reading logs:
