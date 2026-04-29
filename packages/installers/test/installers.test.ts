@@ -12,6 +12,7 @@ import type { InstallContext } from '../src/types.js';
 let home: string;
 let originalHome: string | undefined;
 let ctx: InstallContext;
+const WRITE_TOOL_MATCHER = 'Edit|Write|MultiEdit|NotebookEdit|Bash|apply_patch|ApplyPatch|Patch';
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'colony-ins-'));
@@ -91,11 +92,11 @@ describe('claude-code installer', () => {
     // PreToolUse and PostToolUse run our auto-claim path; scope them to the
     // tool calls that actually touch files so unrelated tools don't pay the
     // hook cost and so claim-before-edit telemetry has clean coverage.
-    expect(first.hooks.PreToolUse?.[0]?.matcher).toBe('Edit|Write|MultiEdit|NotebookEdit|Bash');
+    expect(first.hooks.PreToolUse?.[0]?.matcher).toBe(WRITE_TOOL_MATCHER);
     expect(first.hooks.PostToolUse?.[0]?.hooks?.[0]?.command).toBe(
       `${ctx.nodeBin} ${ctx.cliPath} hook run post-tool-use --ide claude-code`,
     );
-    expect(first.hooks.PostToolUse?.[0]?.matcher).toBe('Edit|Write|MultiEdit|NotebookEdit|Bash');
+    expect(first.hooks.PostToolUse?.[0]?.matcher).toBe(WRITE_TOOL_MATCHER);
     expect(first.mcpServers.colony).toEqual({
       command: ctx.nodeBin,
       args: [ctx.cliPath, 'mcp'],
@@ -160,7 +161,7 @@ describe('claude-code installer', () => {
         hooks: [{ type: 'command', command: 'node /home/me/.claude/hooks/context.js' }],
       },
       {
-        matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash',
+        matcher: WRITE_TOOL_MATCHER,
         hooks: [
           {
             type: 'command',
@@ -238,11 +239,11 @@ describe('codex installer', () => {
     expect(first.hooks.SessionStart?.[0]?.hooks?.[0]?.command).toBe(
       `${ctx.nodeBin} ${ctx.cliPath} hook run session-start --ide codex`,
     );
-    expect(first.hooks.PreToolUse?.[0]?.matcher).toBe('Edit|Write|MultiEdit|NotebookEdit|Bash');
+    expect(first.hooks.PreToolUse?.[0]?.matcher).toBe(WRITE_TOOL_MATCHER);
     expect(first.hooks.PreToolUse?.[0]?.hooks?.[0]?.command).toBe(
       `${ctx.nodeBin} ${ctx.cliPath} hook run pre-tool-use --ide codex`,
     );
-    expect(first.hooks.PostToolUse?.[0]?.matcher).toBe('Edit|Write|MultiEdit|NotebookEdit|Bash');
+    expect(first.hooks.PostToolUse?.[0]?.matcher).toBe(WRITE_TOOL_MATCHER);
     expect(first.hooks.PostToolUse?.[0]?.hooks?.[0]?.command).toBe(
       `${ctx.nodeBin} ${ctx.cliPath} hook run post-tool-use --ide codex`,
     );
@@ -292,7 +293,7 @@ describe('codex installer', () => {
         hooks: [{ type: 'command', command: 'node /custom/codex-hook.js' }],
       },
       {
-        matcher: 'Edit|Write|MultiEdit|NotebookEdit|Bash',
+        matcher: WRITE_TOOL_MATCHER,
         hooks: [
           {
             type: 'command',

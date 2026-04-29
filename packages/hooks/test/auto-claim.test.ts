@@ -74,15 +74,44 @@ describe('extractTouchedFiles', () => {
 
   it('ignores non-write tools and malformed input', () => {
     expect(extractTouchedFiles('Read', { file_path: 'src/x.ts' })).toEqual([]);
-    expect(extractTouchedFiles('Bash', { command: 'rm foo' })).toEqual([]);
     expect(extractTouchedFiles('Edit', null)).toEqual([]);
     expect(extractTouchedFiles('Edit', {})).toEqual([]);
     expect(extractTouchedFiles('Edit', { file_path: '' })).toEqual([]);
   });
 
+  it('extracts normalized Bash write targets from sed and redirects', () => {
+    expect(
+      extractTouchedFiles(
+        'Bash',
+        { command: 'sed -i "s/a/b/" src/edit.ts && cat README.md > ../generated.ts' },
+        { cwd: '/repo/packages/hooks', repoRoot: '/repo' },
+      ),
+    ).toEqual(['packages/hooks/src/edit.ts', 'packages/generated.ts']);
+  });
+
+  it('extracts normalized apply_patch file headers', () => {
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: src/edit.ts',
+      '*** Add File: /repo/packages/hooks/src/new.ts',
+      '*** Delete File: /dev/null',
+      '*** End Patch',
+    ].join('\n');
+
+    expect(extractTouchedFiles('apply_patch', { command: patch }, { repoRoot: '/repo' })).toEqual([
+      'src/edit.ts',
+      'packages/hooks/src/new.ts',
+    ]);
+  });
+
   it('ignores pseudo device paths', () => {
     expect(extractTouchedFiles('Edit', { file_path: '/dev/null' })).toEqual([]);
     expect(extractTouchedFiles('Write', { file_path: '/dev/stdout' })).toEqual([]);
+    expect(
+      extractTouchedFiles('apply_patch', {
+        command: ['*** Begin Patch', '*** Update File: NUL', '*** End Patch'].join('\n'),
+      }),
+    ).toEqual([]);
   });
 });
 
@@ -1020,6 +1049,12 @@ describe('runHook integration: A edits -> B sees warning', () => {
       file_path: 'packages/hooks/src/generated.ts',
       tool: 'Write',
     });
+    expect(metadataOf(store.timeline('A').find((row) => row.kind === 'tool_use'))).toMatchObject({
+      tool: 'Bash',
+      file_path: 'packages/hooks/src/generated.ts',
+      file_paths: ['packages/hooks/src/generated.ts'],
+      extracted_paths: ['packages/hooks/src/generated.ts'],
+    });
 
     const nextTurn = await runHook(
       'user-prompt-submit',
@@ -1028,6 +1063,80 @@ describe('runHook integration: A edits -> B sees warning', () => {
     );
     expect(nextTurn.ok).toBe(true);
     expect(nextTurn.context).toContain('packages/hooks/src/generated.ts');
+  });
+
+  it('Bash sed and cat redirects record extracted paths for all touched files', async () => {
+    const task_id = seedTwoSessionTask();
+
+    const bash = await runHook(
+      'post-tool-use',
+      {
+        session_id: 'A',
+        ide: 'codex',
+        cwd: '/repo/packages/hooks',
+        tool_name: 'Bash',
+        tool_input: {
+          command: 'sed -i "s/a/b/" src/edit.ts && cat README.md > src/generated.ts',
+        },
+        tool_response: { success: true },
+      },
+      { store },
+    );
+
+    expect(bash.ok).toBe(true);
+    expect(store.storage.getClaim(task_id, 'packages/hooks/src/edit.ts')?.session_id).toBe('A');
+    expect(store.storage.getClaim(task_id, 'packages/hooks/src/generated.ts')?.session_id).toBe(
+      'A',
+    );
+    const autoClaims = store.storage.taskObservationsByKind(task_id, 'auto-claim');
+    expect(autoClaims).toHaveLength(2);
+    expect(metadataOf(store.timeline('A').find((row) => row.kind === 'tool_use'))).toMatchObject({
+      tool: 'Bash',
+      file_path: 'packages/hooks/src/edit.ts',
+      file_paths: ['packages/hooks/src/edit.ts', 'packages/hooks/src/generated.ts'],
+      extracted_paths: ['packages/hooks/src/edit.ts', 'packages/hooks/src/generated.ts'],
+    });
+  });
+
+  it('apply_patch records extracted paths and auto-claims every patch file', async () => {
+    const task_id = seedTwoSessionTask();
+    const patch = [
+      '*** Begin Patch',
+      '*** Update File: src/viewer.tsx',
+      '@@',
+      '-old',
+      '+new',
+      '*** Add File: src/generated.ts',
+      '+export const generated = true;',
+      '*** Update File: /dev/null',
+      '*** End Patch',
+    ].join('\n');
+
+    const result = await runHook(
+      'post-tool-use',
+      {
+        session_id: 'A',
+        ide: 'codex',
+        cwd: '/repo',
+        tool_name: 'apply_patch',
+        tool_input: { command: patch },
+        tool_response: { success: true },
+      },
+      { store },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(store.storage.getClaim(task_id, 'src/viewer.tsx')?.session_id).toBe('A');
+    expect(store.storage.getClaim(task_id, 'src/generated.ts')?.session_id).toBe('A');
+    expect(store.storage.getClaim(task_id, '/dev/null')).toBeUndefined();
+    const autoClaims = store.storage.taskObservationsByKind(task_id, 'auto-claim');
+    expect(autoClaims).toHaveLength(2);
+    expect(metadataOf(store.timeline('A').find((row) => row.kind === 'tool_use'))).toMatchObject({
+      tool: 'apply_patch',
+      file_path: 'src/viewer.tsx',
+      file_paths: ['src/viewer.tsx', 'src/generated.ts'],
+      extracted_paths: ['src/viewer.tsx', 'src/generated.ts'],
+    });
   });
 
   it('does not auto-claim pseudo paths from Bash redirects', async () => {

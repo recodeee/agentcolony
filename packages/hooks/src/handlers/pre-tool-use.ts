@@ -90,7 +90,11 @@ export function preToolUseResult(store: MemoryStore, input: HookInput): ClaimBef
   try {
     return bridgePolicyResult(claimBeforeEditFromToolUse(store, input));
   } catch {
-    const files = extractTouchedFiles(toolName, input.tool_input);
+    const scope = taskScopeForToolUse(store, input);
+    const files = extractTouchedFiles(toolName, input.tool_input, {
+      cwd: scope.cwd ?? input.cwd,
+      repoRoot: scope.repo_root,
+    });
     const policyMode = bridgePolicyMode(store);
     return bridgePolicyResult({
       policy_mode: policyMode,
@@ -117,7 +121,11 @@ export function claimBeforeEditFromToolUse(
   input: PreToolUseInput,
 ): ClaimBeforeEditResult {
   const toolName = input.tool_name ?? input.tool ?? '';
-  const files = extractTouchedFiles(toolName, input.tool_input);
+  const scope = taskScopeForToolUse(store, input);
+  const files = extractTouchedFiles(toolName, input.tool_input, {
+    cwd: scope.cwd ?? input.cwd,
+    repoRoot: scope.repo_root,
+  });
   const policyMode = bridgePolicyMode(store);
   const result: ClaimBeforeEditResult = {
     policy_mode: policyMode,
@@ -130,8 +138,6 @@ export function claimBeforeEditFromToolUse(
     warnings: [],
   };
   if (files.length === 0) return result;
-
-  const scope = taskScopeForToolUse(store, input);
 
   for (const file_path of files) {
     const conflict = currentClaimConflict(store, input.session_id, scope, file_path);
@@ -305,19 +311,23 @@ function taskScopeForToolUse(
 } {
   try {
     const session = store.storage.getSession(input.session_id);
+    const activeTaskId = store.storage.findActiveTaskForSession(input.session_id);
+    const activeTask = activeTaskId === undefined ? undefined : store.storage.getTask(activeTaskId);
     const metadataScope = hookMetadataScope(input.metadata);
     const cwd = input.cwd ?? metadataScope.cwd ?? session?.cwd ?? undefined;
-    const detected = cwd ? detectRepoBranch(cwd) : null;
+    const detected = activeTask ? null : cwd ? detectRepoBranch(cwd) : null;
     return {
-      ...(detected
-        ? { repo_root: detected.repo_root, branch: detected.branch }
-        : {
-            ...optionalString(
-              'repo_root',
-              readString(input.metadata?.repo_root) ?? readString(input.metadata?.repoRoot),
-            ),
-            ...optionalString('branch', readString(input.metadata?.branch)),
-          }),
+      ...(activeTask
+        ? { repo_root: activeTask.repo_root, branch: activeTask.branch }
+        : detected
+          ? { repo_root: detected.repo_root, branch: detected.branch }
+          : {
+              ...optionalString(
+                'repo_root',
+                readString(input.metadata?.repo_root) ?? readString(input.metadata?.repoRoot),
+              ),
+              ...optionalString('branch', readString(input.metadata?.branch)),
+            }),
       ...(cwd !== undefined ? { cwd } : {}),
       ...optionalString('worktree_path', metadataScope.worktree_path),
       ...(input.ide !== undefined
