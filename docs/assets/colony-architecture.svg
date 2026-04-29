@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360" role="img" aria-labelledby="title desc">
+  <title id="title">Colony architecture diagram</title>
+  <desc id="desc">Architecture diagram showing agents and IDE hooks feeding Colony MCP and storage, with Queen plans and the viewer reading local state.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07110f"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#64748b"/>
+    </marker>
+    <style>
+      text{fill:#e5e7eb;font-family:Arial,sans-serif;letter-spacing:0}
+      .card{fill:#0b0f14;stroke:#253040;stroke-width:1.2}
+      .core{fill:#052e2b;stroke:#34d399;stroke-width:1.8}
+      .store{fill:#111827;stroke:#60a5fa;stroke-width:1.4}
+      .queen{fill:#2a1f05;stroke:#f59e0b;stroke-width:1.4}
+      .line{stroke:#64748b;stroke-width:1.5;fill:none;marker-end:url(#arrow)}
+      .soft{stroke:#334155;stroke-width:1.2;fill:none}
+      .label{font-family:Arial,sans-serif;fill:#e5e7eb;letter-spacing:0}
+      .muted{fill:#94a3b8}
+      .mono{font-family:monospace;letter-spacing:0}
+      .tiny{font-size:12px}
+      .small{font-size:14px}
+    </style>
+  </defs>
+  <rect width="900" height="360" rx="22" fill="url(#bg)"/>
+  <rect x="1" y="1" width="898" height="358" rx="21" fill="none" stroke="#1f2937"/>
+  <text fill="#e5e7eb" class="label" x="34" y="44" font-size="25" font-weight="720">Local-first coordination architecture</text>
+  <text fill="#94a3b8" class="label muted" x="34" y="68" font-size="14">Agents keep their normal runtime. Colony supplies local traces, ownership, routing, and task memory.</text>
+  <g transform="translate(34 104)">
+    <rect class="card" x="0" y="0" width="170" height="195" rx="14"/>
+    <text font-size="12" fill="#e5e7eb" class="label small" x="18" y="28" font-weight="700">Agent runtimes</text>
+    <g class="mono tiny">
+      <text font-size="12" fill="#94a3b8" class="label muted" x="18" y="60">Claude Code</text>
+      <text font-size="12" fill="#94a3b8" class="label muted" x="18" y="86">Codex</text>
+      <text font-size="12" fill="#94a3b8" class="label muted" x="18" y="112">Cursor</text>
+      <text font-size="12" fill="#94a3b8" class="label muted" x="18" y="138">Gemini CLI</text>
+      <text font-size="12" fill="#94a3b8" class="label muted" x="18" y="164">OpenCode</text>
+    </g>
+    <circle cx="135" cy="56" r="5" fill="#34d399"/>
+    <circle cx="135" cy="82" r="5" fill="#60a5fa"/>
+    <circle cx="135" cy="108" r="5" fill="#f472b6"/>
+    <circle cx="135" cy="134" r="5" fill="#fbbf24"/>
+    <circle cx="135" cy="160" r="5" fill="#a78bfa"/>
+  </g>
+  <g transform="translate(250 104)">
+    <rect class="card" x="0" y="0" width="170" height="195" rx="14"/>
+    <text font-size="12" fill="#e5e7eb" class="label small" x="18" y="28" font-weight="700">Install surface</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="18" y="61">hooks</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="18" y="88">stdio MCP config</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="18" y="115">lifecycle events</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="18" y="142">tool observations</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="18" y="169">session heartbeat</text>
+  </g>
+  <g transform="translate(466 86)">
+    <rect class="core" x="0" y="0" width="190" height="230" rx="18"/>
+    <text fill="#e5e7eb" class="label" x="31" y="35" font-size="22" font-weight="760">Colony</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="31" y="62">MCP server</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="31" y="88">MemoryStore</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="31" y="114">task threads</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="31" y="140">claims + handoffs</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="31" y="166">attention inbox</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="31" y="192">ready work router</text>
+    <circle cx="154" cy="35" r="15" fill="#34d399" opacity="0.2"/>
+    <circle cx="154" cy="35" r="6" fill="#bbf7d0"/>
+  </g>
+  <g transform="translate(708 96)">
+    <rect class="store" x="0" y="0" width="154" height="82" rx="14"/>
+    <text font-size="12" fill="#e5e7eb" class="label small" x="19" y="29" font-weight="700">Local state</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="19" y="56">~/.colony/data.db</text>
+    <rect class="queen" x="0" y="106" width="154" height="82" rx="14"/>
+    <text font-size="12" fill="#e5e7eb" class="label small" x="19" y="135" font-weight="700">Queen</text>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="19" y="162">claimable waves</text>
+  </g>
+  <g transform="translate(466 322)">
+    <rect x="0" y="-40" width="396" height="40" rx="12" fill="#0b0f14" stroke="#253040"/>
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="18" y="-15">viewer reads the same local traces; agents remain terminal-first</text>
+  </g>
+  <path class="line" d="M204 201H242"/>
+  <path class="line" d="M420 201H458"/>
+  <path class="line" d="M656 137H700"/>
+  <path class="line" d="M656 241H700"/>
+  <path class="soft" d="M785 178C785 225 735 260 664 275"/>
+  <path class="soft" d="M542 315C511 305 493 289 493 269"/>
+  <g transform="translate(285 313)">
+    <rect x="0" y="-31" width="128" height="31" rx="15" fill="#172554" stroke="#2563eb"/>
+    <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="18" y="-11">mcp__colony__*</text>
+  </g>
+</svg>

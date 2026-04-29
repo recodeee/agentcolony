@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360" role="img" aria-labelledby="title desc">
+  <title id="title">Colony health readiness summary</title>
+  <desc id="desc">A dark terminal-style health dashboard showing readiness pillars, loop adoption, stale signal decay, and claim-before-edit coverage.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0f1a"/>
+      <stop offset="1" stop-color="#101014"/>
+    </linearGradient>
+    <style>
+      text{fill:#e5e7eb;font-family:Arial,sans-serif;letter-spacing:0}
+      .panel{fill:#0b0f14;stroke:#253040;stroke-width:1.2}
+      .ok{fill:#34d399}
+      .warn{fill:#f59e0b}
+      .bad{fill:#fb7185}
+      .blue{fill:#60a5fa}
+      .barbg{fill:#172033}
+      .label{font-family:Arial,sans-serif;fill:#e5e7eb;letter-spacing:0}
+      .muted{fill:#94a3b8}
+      .mono{font-family:monospace;letter-spacing:0}
+      .tiny{font-size:12px}
+      .small{font-size:14px}
+    </style>
+  </defs>
+  <rect width="900" height="360" rx="22" fill="url(#bg)"/>
+  <rect x="1" y="1" width="898" height="358" rx="21" fill="none" stroke="#1f2937"/>
+  <text fill="#e5e7eb" class="label" x="34" y="44" font-size="25" font-weight="720">Health turns coordination into feedback</text>
+  <text fill="#94a3b8" class="label muted" x="34" y="68" font-size="14">The CLI reports whether agents are only reading Colony or actually coordinating through it.</text>
+  <g transform="translate(34 96)">
+    <rect class="panel" width="292" height="220" rx="16"/>
+    <text font-size="12" fill="#e5e7eb" class="label small" x="20" y="31" font-weight="700">Readiness pillars</text>
+    <g transform="translate(20 58)">
+      <circle class="ok" cx="7" cy="7" r="5"/><text font-size="12" fill="#e5e7eb" class="label mono tiny" x="22" y="11">coordination readiness</text>
+      <circle class="blue" cx="7" cy="43" r="5"/><text font-size="12" fill="#e5e7eb" class="label mono tiny" x="22" y="47">execution safety</text>
+      <circle class="warn" cx="7" cy="79" r="5"/><text font-size="12" fill="#e5e7eb" class="label mono tiny" x="22" y="83">Queen plan readiness</text>
+      <circle class="ok" cx="7" cy="115" r="5"/><text font-size="12" fill="#e5e7eb" class="label mono tiny" x="22" y="119">working-state migration</text>
+      <circle class="bad" cx="7" cy="151" r="5"/><text font-size="12" fill="#e5e7eb" class="label mono tiny" x="22" y="155">signal evaporation</text>
+    </g>
+  </g>
+  <g transform="translate(356 96)">
+    <rect class="panel" width="510" height="220" rx="16"/>
+    <text font-size="12" fill="#e5e7eb" class="label small" x="20" y="31" font-weight="700">Loop adoption</text>
+    <g class="mono tiny">
+      <text font-size="12" fill="#94a3b8" class="label muted" x="20" y="69">hivemind_context -> attention_inbox</text>
+      <rect class="barbg" x="268" y="58" width="190" height="10" rx="5"/>
+      <rect class="ok" x="268" y="58" width="98" height="10" rx="5"/>
+      <text font-size="12" fill="#e5e7eb" class="label" x="469" y="69">51%</text>
+      <text font-size="12" fill="#94a3b8" class="label muted" x="20" y="104">attention_inbox -> task_ready_for_agent</text>
+      <rect class="barbg" x="268" y="93" width="190" height="10" rx="5"/>
+      <rect class="ok" x="268" y="93" width="190" height="10" rx="5"/>
+      <text font-size="12" fill="#e5e7eb" class="label" x="469" y="104">100%</text>
+      <text font-size="12" fill="#94a3b8" class="label muted" x="20" y="139">task_list -> task_ready_for_agent</text>
+      <rect class="barbg" x="268" y="128" width="190" height="10" rx="5"/>
+      <rect class="warn" x="268" y="128" width="12" height="10" rx="5"/>
+      <text font-size="12" fill="#e5e7eb" class="label" x="469" y="139">6%</text>
+      <text font-size="12" fill="#94a3b8" class="label muted" x="20" y="174">task_ready_for_agent -> plan claim</text>
+      <rect class="barbg" x="268" y="163" width="190" height="10" rx="5"/>
+      <rect class="warn" x="268" y="163" width="4" height="10" rx="5"/>
+      <text font-size="12" fill="#e5e7eb" class="label" x="469" y="174">0%</text>
+    </g>
+  </g>
+  <g transform="translate(34 330)">
+    <text font-size="12" fill="#94a3b8" class="label muted mono tiny" x="0" y="0">health checks: stale claims, note migration, claim-before-edit, Queen waves, storage, worker, embeddings</text>
+  </g>
+</svg>

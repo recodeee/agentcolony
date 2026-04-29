@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="860" height="300" viewBox="0 0 860 300" role="img" aria-labelledby="title desc">
+  <title id="title">Colony local-first coordination for coding agents</title>
+  <desc id="desc">A dark README hero showing several coding agents coordinating through Colony, Queen plans, MCP tools, and local storage.</desc>
+  <defs>
+    <linearGradient id="hero-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07110f"/>
+      <stop offset="0.45" stop-color="#0a0f1f"/>
+      <stop offset="1" stop-color="#100a18"/>
+    </linearGradient>
+    <radialGradient id="hero-glow" cx="50%" cy="48%" r="55%">
+      <stop offset="0" stop-color="#6ee7b7" stop-opacity="0.52"/>
+      <stop offset="0.42" stop-color="#22d3ee" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#0b1020" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+    <style>
+      text{fill:#e5e7eb;font-family:Arial,sans-serif;letter-spacing:0}
+      .panel{fill:#0b0f14;stroke:#1f2937;stroke-width:1}
+      .thin{stroke:#334155;stroke-width:1;fill:none}
+      .trail{stroke:#34d399;stroke-width:2;fill:none;stroke-linecap:round}
+      .trail2{stroke:#60a5fa;stroke-width:2;fill:none;stroke-linecap:round}
+      .trail3{stroke:#fbbf24;stroke-width:2;fill:none;stroke-linecap:round;stroke-dasharray:5 7}
+      .node{fill:#bbf7d0;stroke:#34d399;stroke-width:2}
+      .agent{fill:#111827;stroke:#475569;stroke-width:1.2}
+      .label{font-family:Arial,sans-serif;fill:#e5e7eb}
+      .muted{fill:#94a3b8}
+      .tiny{font-size:12px;letter-spacing:0}
+      .small{font-size:14px;letter-spacing:0}
+      .mono{font-family:monospace;letter-spacing:0}
+    </style>
+  </defs>
+  <rect width="860" height="300" rx="24" fill="url(#hero-bg)"/>
+  <rect x="1" y="1" width="858" height="298" rx="23" fill="none" stroke="#1f2937"/>
+  <circle cx="430" cy="148" r="158" fill="url(#hero-glow)"/>
+  <g opacity="0.18">
+    <path d="M0 52H860M0 104H860M0 156H860M0 208H860M0 260H860" stroke="#334155"/>
+    <path d="M58 0V300M116 0V300M174 0V300M232 0V300M290 0V300M348 0V300M406 0V300M464 0V300M522 0V300M580 0V300M638 0V300M696 0V300M754 0V300M812 0V300" stroke="#334155"/>
+  </g>
+  <g transform="translate(68 55)">
+    <text fill="#e5e7eb" class="label" x="0" y="0" font-size="54" font-weight="750">Colony</text>
+    <text fill="#94a3b8" class="label muted" x="2" y="31" font-size="17">local-first coordination substrate for AI coding agents</text>
+    <g transform="translate(0 62)">
+      <rect class="panel" x="0" y="0" width="282" height="82" rx="14"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="18" y="27">hivemind_context</text>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="18" y="50">attention_inbox</text>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="18" y="73">task_ready_for_agent</text>
+      <path class="trail" d="M160 23H249"/>
+      <path class="trail2" d="M151 46H249"/>
+      <path class="trail3" d="M172 69H249"/>
+      <circle class="node" cx="255" cy="23" r="4"/>
+      <circle class="node" cx="255" cy="46" r="4"/>
+      <circle class="node" cx="255" cy="69" r="4"/>
+    </g>
+    <g transform="translate(0 164)">
+      <rect x="0" y="0" width="118" height="34" rx="17" fill="#052e2b" stroke="#115e59"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="17" y="22">SQLite</text>
+      <rect x="130" y="0" width="126" height="34" rx="17" fill="#172554" stroke="#2563eb"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="148" y="22">stdio MCP</text>
+      <rect x="268" y="0" width="128" height="34" rx="17" fill="#3b2602" stroke="#b45309"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="287" y="22">Queen plans</text>
+    </g>
+  </g>
+  <g transform="translate(454 41)">
+    <path class="thin" d="M161 41C108 52 69 83 51 126C32 170 66 208 123 221"/>
+    <path class="thin" d="M162 41C219 47 266 82 283 126C303 178 267 218 205 224"/>
+    <path class="thin" d="M51 126C102 97 219 96 283 126"/>
+    <path class="thin" d="M123 221C149 168 177 116 205 224"/>
+    <circle cx="161" cy="124" r="44" fill="#052e2b" stroke="#34d399" stroke-width="2"/>
+    <circle cx="161" cy="124" r="62" fill="#34d399" opacity="0.08"/>
+    <circle cx="161" cy="124" r="76" fill="#34d399" opacity="0.04"/>
+    <text fill="#e5e7eb" class="label" x="117" y="116" font-size="18" font-weight="700">Colony</text>
+    <text font-size="12" fill="#94a3b8" class="label mono tiny muted" x="115" y="139">local traces</text>
+    <g>
+      <circle class="agent" cx="161" cy="41" r="25"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="141" y="46">Codex</text>
+      <circle class="agent" cx="51" cy="126" r="25"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="30" y="131">Claude</text>
+      <circle class="agent" cx="283" cy="126" r="25"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="264" y="131">Cursor</text>
+      <circle class="agent" cx="123" cy="221" r="25"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="99" y="226">Gemini</text>
+      <circle class="agent" cx="205" cy="224" r="25"/>
+      <text font-size="12" fill="#e5e7eb" class="label mono tiny" x="179" y="229">OpenCode</text>
+    </g>
+    <g filter="url(#soft)" opacity="0.9">
+      <circle cx="161" cy="124" r="18" fill="#6ee7b7"/>
+      <circle cx="51" cy="126" r="5" fill="#60a5fa"/>
+      <circle cx="283" cy="126" r="5" fill="#f472b6"/>
+    </g>
+  </g>
+</svg>
