@@ -111,6 +111,7 @@ colony health --fix-plan
 colony status
 colony search "error or decision"
 colony coordination sweep --json
+colony coordination sweep --release-safe-stale-claims --json
 colony queen sweep
 colony viewer
 pnpm smoke:codex-omx-pretool
@@ -119,12 +120,12 @@ pnpm smoke:codex-omx-pretool
 | Command | Purpose |
 | --- | --- |
 | `colony health` | Show readiness, adoption, stale signals, note migration, and claim-before-edit coverage. |
-| `colony health --fix-plan` | Print the guided recovery sequence for execution-safety states such as `pre_tool_use_missing`, stale claims, and live contentions. Add `--apply` to run coordination and queen sweeps; it still does not release claims or install hooks. |
+| `colony health --fix-plan` | Print the guided recovery sequence for execution-safety states such as `pre_tool_use_missing`, stale claims, and live contentions. Add `--apply` to run coordination and queen sweeps; add `--release-safe-stale-claims` only when you want explicit safe stale-claim cleanup. |
 | `colony status` | Show storage, installed IDEs, worker state, memory counts, and embedding status. |
 | `colony search "<query>"` | Search prior observations and session memory. |
 | `colony timeline <session-id>` | Inspect one session chronologically. |
 | `colony observe` | Watch task threads and coordination state. |
-| `colony coordination sweep` | Report stale claims, expired handoffs/messages, decayed proposals, stale hot files, and blocked downstream work. |
+| `colony coordination sweep` | Report stale claims, expired handoffs/messages, decayed proposals, stale hot files, and blocked downstream work. Use `--release-safe-stale-claims --json` for the explicit safe cleanup path. |
 | `colony queen sweep` | List plans that are stalled, unclaimed, or ready to archive. |
 | `colony viewer` | Open the local read-only web viewer. |
 | `colony install --ide <name>` | Register hooks and MCP config for one runtime. |
@@ -163,6 +164,43 @@ Readiness pillars:
 | Queen plan readiness | Multi-agent work has active, claimable wave plans. |
 | Working-state migration | `task_note_working` beats ad hoc notepad writes. |
 | Signal evaporation | Stale claims/proposals/handoffs decay instead of clogging work. |
+
+---
+
+### Operator recovery: signal_evaporation
+
+`signal_evaporation` measures whether old coordination signals still affect current readiness. A bad state usually means stale file claims, quota-pending ownership, stale downstream blockers, or decayed-but-visible signals are still making agents avoid work or keeping Queen waves from becoming claimable.
+
+Stale claims are risky because they advertise ownership after the owning session is gone or inactive. Safe cleanup is explicit because releasing a claim changes who may edit a file; Colony makes operators inspect first, then opt in to the release path.
+
+Dry-run first:
+
+```bash
+colony health --fix-plan
+colony coordination sweep --json
+```
+
+Review the reported stale claims, top stale branches, dirty-skip counts, stale downstream blockers, and recommended cleanup action. Then apply safe stale-claim cleanup through the focused sweep or the broader health fix plan:
+
+```bash
+colony coordination sweep --release-safe-stale-claims --json
+colony health --fix-plan --apply --release-safe-stale-claims
+```
+
+Safety guarantees:
+
+- dirty claims are reported and skipped, not blindly released
+- active claims are skipped
+- downstream blockers are preserved unless you use explicit blocker-release options
+- audit history is retained through observations and release records
+
+After cleanup, re-check the recent window:
+
+```bash
+colony health --hours 1
+```
+
+Healthy readiness means `signal_evaporation` is good and active-impact stale claims are near zero.
 
 ---
 
