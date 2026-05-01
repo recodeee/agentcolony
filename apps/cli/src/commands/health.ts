@@ -146,6 +146,7 @@ interface ClaimBeforeEditPayload extends ClaimBeforeEditStats {
   status: 'available' | 'not_available' | 'no_data';
   measurable_edits: number;
   unmeasurable_edits: number;
+  runtime_bridge_status: OmxRuntimeBridgePayload['status'];
   reason: string | null;
   task_claim_file_calls: number;
   edits_with_claim: number;
@@ -1452,6 +1453,7 @@ function claimBeforeEditPayload(
     status,
     measurable_edits: measurableEdits,
     unmeasurable_edits: unmeasurableEdits,
+    runtime_bridge_status: recent.omx_runtime_bridge_status,
     reason,
     task_claim_file_calls: taskClaimFileCalls,
     edits_with_claim: stats.edits_claimed_before,
@@ -1754,9 +1756,12 @@ function formatClaimBeforeEdit(payload: ClaimBeforeEditPayload): string[] {
 
 function formatClaimBeforeEditMeasurement(payload: ClaimBeforeEditPayload): string[] {
   const lines = [
-    `  measurement: measurable_edits=${payload.measurable_edits}, unmeasurable_edits=${payload.unmeasurable_edits}`,
+    `  measurement: measurable_edits=${payload.measurable_edits}, unmeasurable_edits=${payload.unmeasurable_edits}, runtime_bridge_status=${payload.runtime_bridge_status}`,
   ];
-  if (payload.reason) lines.push(`  reason: ${payload.reason}`);
+  if (payload.reason) {
+    lines.push(`  reason: ${payload.reason}`);
+    lines.push(`  metric unreliable: ${payload.reason}`);
+  }
   return lines;
 }
 
@@ -2025,9 +2030,13 @@ function healthActionHints(payload: ColonyHealthPayloadWithoutHints): ActionHint
   const queenReadyWithoutClaims =
     payload.ready_to_claim_vs_claimed.ready_to_claim > 0 &&
     payload.ready_to_claim_vs_claimed.claimed === 0;
+  const queenInactiveWithSubtasks =
+    payload.queen_wave_health.active_plans === 0 &&
+    payload.ready_to_claim_vs_claimed.plan_subtasks > 0;
   if (
     isBelowTarget(readyToClaim.conversion_rate, TARGET_READY_TO_CLAIM) &&
-    !queenReadyWithoutClaims
+    !queenReadyWithoutClaims &&
+    !queenInactiveWithSubtasks
   ) {
     const hasPlanSubtasks =
       payload.queen_wave_health.active_plans > 0 ||
@@ -2228,7 +2237,30 @@ function healthActionHints(payload: ColonyHealthPayloadWithoutHints): ActionHint
     });
   }
 
-  if (queenReadyWithoutClaims) {
+  if (queenInactiveWithSubtasks) {
+    hints.push({
+      metric: 'Queen activation/claim',
+      status: 'bad',
+      current: `active plans ${payload.queen_wave_health.active_plans}, plan subtasks ${payload.ready_to_claim_vs_claimed.plan_subtasks}`,
+      target: 'active Queen plan or claimed repair subtask',
+      action:
+        'Reactivate Queen planning or claim/requeue the existing plan subtask so task_ready_for_agent surfaces concrete repair work.',
+      readiness_scope: 'queen_plan_readiness',
+      priority: 7,
+      tool_call:
+        'mcp__colony__task_ready_for_agent({ agent: "<agent>", session_id: "<session_id>", repo_root: "<repo_root>" }) -> mcp__colony__task_plan_claim_subtask(...) or mcp__colony__queen_plan_goal(...)',
+      prompt: codexPrompt({
+        goal: 'repair inactive Queen plan state with existing subtasks',
+        current: `${payload.queen_wave_health.active_plans} active Queen plans, ${payload.ready_to_claim_vs_claimed.plan_subtasks} plan subtask(s) exist`,
+        inspect:
+          'mcp__colony__task_ready_for_agent, mcp__colony__task_plan_claim_subtask, mcp__colony__queen_plan_goal, colony health --json',
+        acceptance:
+          'Queen has an active plan with claimable subtasks, or existing subtasks are claimed/requeued with evidence',
+      }),
+    });
+  }
+
+  if (queenReadyWithoutClaims && !queenInactiveWithSubtasks) {
     hints.push({
       metric: 'Queen ready subtask claim',
       status: 'bad',
@@ -2444,6 +2476,7 @@ function visibleActionHints(
       (hint) =>
         hint.metric === 'OMX runtime bridge' ||
         hint.metric === 'quota relay accept/release' ||
+        hint.metric === 'Queen activation/claim' ||
         hint.metric === 'Queen ready subtask claim',
     );
   const uniqueHints = (hints: ActionHint[]) => {
