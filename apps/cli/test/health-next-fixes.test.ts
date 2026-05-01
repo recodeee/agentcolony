@@ -462,6 +462,104 @@ describe('colony health next fixes', () => {
     expect(json.task_claim_file_before_edits).toMatchObject({
       measurable_edits: 1,
       unmeasurable_edits: 0,
+      runtime_bridge_status: 'unavailable',
+      reason: 'insufficient runtime metadata or bridge unavailable',
+    });
+  });
+
+  it('repairs inactive Queen state when subtasks exist without generic claim adoption advice', () => {
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: [
+          call(1, 'session-a', 'mcp__colony__hivemind_context', NOW - 90_000),
+          call(2, 'session-a', 'mcp__colony__attention_inbox', NOW - 89_000),
+          call(3, 'session-a', 'mcp__colony__task_ready_for_agent', NOW - 88_000),
+          call(4, 'session-a', 'mcp__colony__task_post', NOW - 87_000),
+          call(5, 'session-a', 'mcp__colony__task_message', NOW - 86_000),
+          ...calls(8, 100, 'session-a', 'mcp__colony__task_claim_file'),
+        ],
+        claimBeforeEdit: {
+          edit_tool_calls: 1,
+          edits_with_file_path: 1,
+          edits_claimed_before: 0,
+          pre_tool_use_signals: 0,
+          claim_miss_reasons: {
+            pre_tool_use_missing: 1,
+          },
+        },
+        omxRuntimeStats: {
+          status: 'unavailable',
+          summaries_ingested: 0,
+          latest_summary_ts: null,
+          warning_count: 0,
+        },
+        tasks: [
+          { id: 1, repo_root: '/r', branch: 'main' },
+          { id: 2, repo_root: '/r', branch: 'spec/inactive-blockers/sub-0' },
+        ],
+        observationsByTask: {
+          2: [
+            observation(1, 2, 'plan-subtask', NOW - 3_000, {
+              status: 'completed',
+              depends_on: [],
+              title: 'Completed orphan Queen blocker',
+              file_scope: ['src/queen.ts'],
+            }),
+          ],
+        },
+        claimsByTask: {
+          1: Array.from({ length: 5 }, (_, index) => ({
+            task_id: 1,
+            file_path: `src/quota-${index}.ts`,
+            session_id: `quota-${index}`,
+            claimed_at: NOW - 60_000,
+            state: 'handoff_pending' as const,
+            expires_at: NOW + 60_000,
+            handoff_observation_id: 100 + index,
+          })),
+        },
+      }),
+      {
+        since: SINCE,
+        window_hours: 24,
+        now: NOW,
+        codex_sessions_root: NO_CODEX_ROOT,
+      },
+    );
+
+    expect(payload.queen_wave_health.active_plans).toBe(0);
+    expect(payload.ready_to_claim_vs_claimed.plan_subtasks).toBe(1);
+    expect(payload.signal_health.quota_pending_claims).toBe(5);
+    expect(payload.task_claim_file_before_edits).toMatchObject({
+      measurable_edits: 1,
+      unmeasurable_edits: 0,
+      runtime_bridge_status: 'unavailable',
+      reason: 'insufficient runtime metadata or bridge unavailable',
+    });
+
+    const text = formatColonyHealthOutput(payload);
+    const nextFixes = outputSection(text, 'Next fixes');
+    expect(nextFixes).toContain('1. OMX runtime bridge');
+    expect(nextFixes).toContain('2. quota relay accept/release');
+    expect(nextFixes).toContain('3. Queen activation/claim');
+    expect(nextFixes).toContain(
+      'Reactivate Queen planning or claim/requeue the existing plan subtask',
+    );
+    expect(nextFixes).not.toContain('Call task_claim_file');
+    expect(nextFixes).not.toContain('mcp__colony__task_claim_file');
+    expect(nextFixes).not.toContain('task_ready_for_agent -> claim');
+    expect(text).toContain(
+      'measurement: measurable_edits=1, unmeasurable_edits=0, runtime_bridge_status=unavailable',
+    );
+    expect(text).toContain(
+      'metric unreliable: insufficient runtime metadata or bridge unavailable',
+    );
+
+    const json = JSON.parse(formatColonyHealthOutput(payload, { json: true }));
+    expect(json.task_claim_file_before_edits).toMatchObject({
+      measurable_edits: 1,
+      unmeasurable_edits: 0,
+      runtime_bridge_status: 'unavailable',
       reason: 'insufficient runtime metadata or bridge unavailable',
     });
   });
