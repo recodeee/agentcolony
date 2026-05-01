@@ -674,9 +674,13 @@ export function formatColonyHealthOutput(
 ): string {
   if (options.json) return JSON.stringify(payload, null, 2);
 
+  const visibleHints = visibleActionHints(payload, { verbose: Boolean(options.verbose) });
   const lines = [
     kleur.bold('colony health'),
     kleur.dim(`window: last ${payload.window_hours}h`),
+    '',
+    kleur.bold('Health focus'),
+    ...formatHealthFocus(payload, visibleHints),
     '',
     kleur.bold('Readiness summary'),
     ...formatReadinessSummary(payload.readiness_summary),
@@ -895,8 +899,6 @@ export function formatColonyHealthOutput(
     }
   }
 
-  const visibleHints = visibleActionHints(payload, { verbose: Boolean(options.verbose) });
-
   lines.push('', kleur.bold('Next fixes'));
   if (visibleHints.length === 0) {
     if (payload.action_hints.length > 0) {
@@ -1070,6 +1072,35 @@ function formatReadinessStatus(status: ReadinessStatus): string {
   if (status === 'good') return kleur.green(label);
   if (status === 'bad') return kleur.red(label);
   return kleur.yellow(label);
+}
+
+function formatHealthFocus(payload: ColonyHealthPayload, visibleHints: ActionHint[]): string[] {
+  const badReadiness = Object.entries(payload.readiness_summary)
+    .filter(([, item]) => item.status === 'bad')
+    .map(([scope]) => scope);
+  const hiddenFollowups = Math.max(0, payload.action_hints.length - visibleHints.length);
+  const lines = [
+    `  status: ${badReadiness.length === 0 ? 'clear' : `${badReadiness.length} bad readiness area(s)`}`,
+  ];
+
+  if (badReadiness.length > 0) lines.push(`  bad areas: ${badReadiness.join(', ')}`);
+  if (hiddenFollowups > 0) {
+    lines.push(`  hidden follow-ups: ${hiddenFollowups} (run with --verbose)`);
+  }
+
+  const topHint = visibleHints[0];
+  if (!topHint) {
+    lines.push('  next action: none');
+    return lines;
+  }
+
+  lines.push(
+    `  top blocker: ${topHint.metric}: ${topHint.current}`,
+    `  next action: ${topHint.action}`,
+  );
+  if (topHint.tool_call) lines.push(kleur.dim(`  tool: ${topHint.tool_call}`));
+  if (topHint.command) lines.push(kleur.dim(`  cmd:  ${topHint.command}`));
+  return lines;
 }
 
 function formatMalformedSummaryExamples(
@@ -2401,10 +2432,10 @@ function healthActionHints(payload: ColonyHealthPayloadWithoutHints): ActionHint
       readiness_scope: 'queen_plan_readiness',
       priority:
         queenStateRepair.recommendation.action === 'delete-orphan-subtasks'
-          ? 6
+          ? 8
           : queenStateRepair.recommendation.action === 'reactivate-plan'
-            ? 7
-            : 8,
+            ? 8
+            : 9,
       ...(queenStateRepair.recommendation.tool_call
         ? { tool_call: queenStateRepair.recommendation.tool_call }
         : {}),
