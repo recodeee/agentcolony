@@ -59,6 +59,7 @@ describe('MCP server', () => {
       'hivemind',
       'hivemind_context',
       'list_sessions',
+      'openspec_sync_status',
       'queen_plan_goal',
       'recall_session',
       'rescue_stranded_run',
@@ -70,6 +71,7 @@ describe('MCP server', () => {
       'spec_change_add_delta',
       'spec_change_open',
       'spec_read',
+      'startup_panel',
       'task_accept_handoff',
       'task_accept_relay',
       'task_claim_file',
@@ -139,6 +141,9 @@ describe('MCP server', () => {
     expect(byName.get('task_note_working')?.inputSchema.properties).toHaveProperty(
       'allow_omx_notepad_fallback',
     );
+    expect(byName.get('openspec_sync_status')?.description).toContain(
+      'Report drift between Colony task state and OpenSpec durable artifacts',
+    );
     expect(byName.get('task_message')?.inputSchema.required).toEqual([
       'task_id',
       'session_id',
@@ -198,6 +203,11 @@ describe('MCP server', () => {
     expect(readyDescription.toLowerCase()).toContain('claim');
     expect(readyDescription.toLowerCase()).toContain('work');
     expect(readyDescription.toLowerCase().indexOf('next task')).toBeLessThan(80);
+    const startupDescription = byName.get('startup_panel')?.description ?? '';
+    expect(startupDescription).toMatch(/^Compact startup\/resume panel\./);
+    expect(startupDescription).toContain('active task');
+    expect(startupDescription).toContain('ready work');
+    expect(startupDescription).toContain('exact next MCP call');
     const taskListDescription = byName.get('task_list')?.description ?? '';
     expect(taskListDescription).toMatch(/^Browse task threads;/);
     expect(taskListDescription).toContain('use task_ready_for_agent when choosing work to claim');

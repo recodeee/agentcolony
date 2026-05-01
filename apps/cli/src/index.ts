@@ -6,6 +6,7 @@ import { maybeReexecAfterAutoBuild } from './auto-build.js';
 import { registerAgentsCommand } from './commands/agents.js';
 import { registerBackfillCommand } from './commands/backfill.js';
 import { registerBridgeCommand } from './commands/bridge.js';
+import { registerClaimsCommand } from './commands/claims.js';
 import { registerCockpitCommand } from './commands/cockpit.js';
 import { registerCompressCommands } from './commands/compress.js';
 import { registerConfigCommand } from './commands/config.js';
@@ -23,6 +24,7 @@ import { registerLifecycleCommands } from './commands/lifecycle.js';
 import { registerMcpCommand } from './commands/mcp.js';
 import { registerNoteCommand } from './commands/note.js';
 import { registerObserveCommand } from './commands/observe.js';
+import { registerOpenSpecCommand } from './commands/openspec.js';
 import { registerPlanCommand } from './commands/plan.js';
 import { registerPlansCommand } from './commands/plans.js';
 import { registerQueenCommand } from './commands/queen.js';
@@ -47,6 +49,7 @@ export function createProgram(): Command {
 
   registerAgentsCommand(program);
   registerCockpitCommand(program);
+  registerClaimsCommand(program);
   registerInstallCommand(program);
   registerLaneCommand(program);
   registerUninstallCommand(program);
@@ -70,6 +73,7 @@ export function createProgram(): Command {
   registerBackfillCommand(program);
   registerNoteCommand(program);
   registerObserveCommand(program);
+  registerOpenSpecCommand(program);
   registerPlanCommand(program);
   registerPlansCommand(program);
   registerDebriefCommand(program);

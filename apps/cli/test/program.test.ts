@@ -12,6 +12,7 @@ describe('Colony CLI program', () => {
     const expected = [
       'agents',
       'bridge',
+      'claims',
       'cockpit',
       'coordination',
       'doctor',
@@ -24,6 +25,7 @@ describe('Colony CLI program', () => {
       'mcp',
       'note',
       'observe',
+      'openspec',
       'plan',
       'plans',
       'queen',
@@ -60,6 +62,7 @@ describe('Colony CLI program', () => {
                                             external executor
         cockpit [options]                   Open a GitGuardex cockpit for
                                             Colony-managed plan lanes
+        claims                              Inspect Colony file claim coverage
         install [options]                   Register hooks + MCP server for an IDE
         lane                                Pause, resume, and take over contended
                                             lanes
@@ -96,10 +99,11 @@ describe('Colony CLI program', () => {
         reindex                             Rebuild FTS index
         backfill                            Heal historical rows that predate newer
                                             inference logic.
-        note [options] <text...>            Record a timestamped scratch note into
-                                            the memory timeline
+        note [options] [text...]            Record scratch notes and compact working
+                                            handoff notes
         observe [options]                   Live dashboard of collaboration state.
                                             Run in a spare terminal during a session.
+        openspec                            Inspect Colony and OpenSpec drift
         plan                                Create and operate OpenSpec-like Colony
                                             plan workspaces
         plans                               Prepare safe launch packets for published
