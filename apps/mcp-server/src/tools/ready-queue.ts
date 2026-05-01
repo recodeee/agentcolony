@@ -844,7 +844,7 @@ function quotaRelayReadyItems(
   for (const task of tasks) {
     if (args.repo_root !== undefined && task.repo_root !== args.repo_root) continue;
     for (const claim of store.storage.listClaims(task.id)) {
-      if (claim.state !== 'handoff_pending' || claim.handoff_observation_id === null) continue;
+      if (!isQuotaClaimReadyState(claim) || claim.handoff_observation_id === null) continue;
       const key = `${task.id}:${claim.session_id}:${claim.handoff_observation_id}`;
       const existing = groups.get(key);
       if (existing) {
@@ -970,7 +970,11 @@ function claimQuotaAccept(
   thread.join(normalized.session_id, normalized.agent);
   const expiresAt = readNumber(meta.expires_at) ?? latestClaimExpiresAt(pendingClaims);
   const status = readString(meta.status);
-  if (status === 'pending' && (expiresAt === null || Date.now() <= expiresAt)) {
+  const canAcceptLive =
+    status === 'pending' &&
+    (expiresAt === null || Date.now() <= expiresAt) &&
+    pendingClaims.every((claim) => claim.state === 'handoff_pending');
+  if (canAcceptLive) {
     const accepted = thread.acceptQuotaClaim({
       session_id: normalized.session_id,
       handoff_observation_id: normalized.quota_observation_id,
@@ -1064,8 +1068,8 @@ function normalizeQuotaAcceptArgs(
   if (normalizedFilePath !== null && !claimForFile) {
     throw new Error('quota claim not found');
   }
-  if (claimForFile && claimForFile.state !== 'handoff_pending') {
-    throw new Error(`claim is ${claimForFile.state}, not handoff_pending`);
+  if (claimForFile && !isQuotaClaimReadyState(claimForFile)) {
+    throw new Error(`claim is ${claimForFile.state}, not quota-claimable`);
   }
 
   const quotaObservationId =
@@ -1089,7 +1093,7 @@ function normalizeQuotaAcceptArgs(
   const meta = parseMeta(obs.metadata);
   const allPendingClaims = store.storage
     .listClaims(args.task_id)
-    .filter((claim) => claim.state === 'handoff_pending')
+    .filter(isQuotaClaimReadyState)
     .filter((claim) => claim.handoff_observation_id === quotaObservationId);
   if (
     normalizedFilePath !== null &&
@@ -1131,6 +1135,10 @@ function quotaRelayClaimReason(task: TaskRow, blocksDownstream: boolean): string
   return blocksDownstream
     ? `Claim quota-stopped task ${task.id}: old owner stopped on quota and downstream plan work is blocked.`
     : `Claim quota-stopped task ${task.id}: old owner stopped on quota and the task is ready for replacement ownership.`;
+}
+
+function isQuotaClaimReadyState(claim: TaskClaimRow): boolean {
+  return claim.state === 'handoff_pending' || claim.state === 'weak_expired';
 }
 
 function isQuotaRelayKind(kind: string): kind is 'handoff' | 'relay' {
