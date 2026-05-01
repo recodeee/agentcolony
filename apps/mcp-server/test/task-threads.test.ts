@@ -1234,6 +1234,69 @@ describe('task threads — handoff lifecycle', () => {
     expect(relayMeta.status).toBe('expired');
   });
 
+  it('task_claim_quota_release_expired downgrades every expired claim on a relay baton', async () => {
+    const t0 = Date.parse('2026-05-01T12:00:00.000Z');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(t0);
+    const { task_id, sessionA, sessionB } = seedTwoSessionTask();
+
+    await call('task_claim_file', {
+      task_id,
+      session_id: sessionA,
+      file_path: 'src/auth.ts',
+    });
+    await call('task_claim_file', {
+      task_id,
+      session_id: sessionA,
+      file_path: 'src/api.ts',
+    });
+    const { relay_observation_id } = await call<{ relay_observation_id: number }>('task_relay', {
+      task_id,
+      session_id: sessionA,
+      agent: 'claude',
+      reason: 'quota',
+      one_line: 'expired multi-file cleanup',
+      base_branch: 'main',
+      expires_in_minutes: 1,
+    });
+
+    vi.setSystemTime(t0 + 2 * 60_000);
+    const released = await call<{
+      status: string;
+      released_claims: Array<{ file_path: string; state: string }>;
+      audit_observation_ids: number[];
+    }>('task_claim_quota_release_expired', {
+      task_id,
+      session_id: sessionB,
+      handoff_observation_id: relay_observation_id,
+    });
+
+    expect(released.status).toBe('released_expired');
+    expect(released.released_claims).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ file_path: 'src/auth.ts', state: 'weak_expired' }),
+        expect.objectContaining({ file_path: 'src/api.ts', state: 'weak_expired' }),
+      ]),
+    );
+    expect(released.released_claims).toHaveLength(2);
+    expect(released.audit_observation_ids).toHaveLength(2);
+    expect(store.storage.getClaim(task_id, 'src/auth.ts')).toMatchObject({
+      session_id: sessionA,
+      state: 'weak_expired',
+      expires_at: t0 + 60_000,
+      handoff_observation_id: relay_observation_id,
+    });
+    expect(store.storage.getClaim(task_id, 'src/api.ts')).toMatchObject({
+      session_id: sessionA,
+      state: 'weak_expired',
+      expires_at: t0 + 60_000,
+      handoff_observation_id: relay_observation_id,
+    });
+    const relay = store.storage.getObservation(relay_observation_id);
+    const relayMeta = JSON.parse(relay?.metadata ?? '{}');
+    expect(relayMeta.status).toBe('expired');
+  });
+
   it('task_claim_quota_accept rejects already accepted quota relays', async () => {
     const { task_id, sessionA, sessionB } = seedTwoSessionTask();
 

@@ -144,6 +144,45 @@ describe('tasks', () => {
     ]);
   });
 
+  it('marks expired quota-pending claims weak_expired without deleting audit ownership', () => {
+    seedSessions('owner');
+    const task = storage.findOrCreateTask({
+      title: 'quota relay',
+      repo_root: '/r',
+      branch: 'b',
+      created_by: 'owner',
+    });
+    storage.claimFile({ task_id: task.id, file_path: 'src/x.ts', session_id: 'owner' });
+    const relayId = storage.insertObservation({
+      session_id: 'owner',
+      kind: 'relay',
+      content: 'quota relay',
+      task_id: task.id,
+    });
+    storage.markClaimHandoffPending({
+      task_id: task.id,
+      file_path: 'src/x.ts',
+      session_id: 'owner',
+      expires_at: 1234,
+      handoff_observation_id: relayId,
+    });
+
+    storage.markClaimWeakExpired({
+      task_id: task.id,
+      file_path: 'src/x.ts',
+      session_id: 'owner',
+      handoff_observation_id: relayId,
+    });
+
+    expect(storage.getClaim(task.id, 'src/x.ts')).toMatchObject({
+      session_id: 'owner',
+      state: 'weak_expired',
+      expires_at: 1234,
+      handoff_observation_id: relayId,
+    });
+    expect(storage.recentClaims(task.id, 0)).toEqual([]);
+  });
+
   it('observations carry task_id and surface via taskObservationsSince', () => {
     seedSessions('s-a', 's-b');
     const task = storage.findOrCreateTask({
@@ -391,6 +430,42 @@ describe('tasks', () => {
       }),
     ]);
   });
+
+  it('migrates the task_claims state check to allow weak_expired', () => {
+    seedSessions('s-a');
+    const task = storage.findOrCreateTask({
+      title: 't',
+      repo_root: '/r',
+      branch: 'b',
+      created_by: 's-a',
+    });
+    storage.claimFile({ task_id: task.id, file_path: 'src/x.ts', session_id: 's-a' });
+    const relayId = storage.insertObservation({
+      session_id: 's-a',
+      kind: 'relay',
+      content: 'quota relay',
+      task_id: task.id,
+    });
+    storage.close();
+    rewriteTaskClaimsWithOldStateCheck(join(dir, 'test.db'));
+
+    storage = new Storage(join(dir, 'test.db'));
+    storage.markClaimHandoffPending({
+      task_id: task.id,
+      file_path: 'src/x.ts',
+      session_id: 's-a',
+      expires_at: 1234,
+      handoff_observation_id: relayId,
+    });
+    storage.markClaimWeakExpired({
+      task_id: task.id,
+      file_path: 'src/x.ts',
+      session_id: 's-a',
+      handoff_observation_id: relayId,
+    });
+
+    expect(storage.getClaim(task.id, 'src/x.ts')).toMatchObject({ state: 'weak_expired' });
+  });
 });
 
 function rewriteTaskClaimsAsOldSchema(dbPath: string): void {
@@ -408,6 +483,33 @@ function rewriteTaskClaimsAsOldSchema(dbPath: string): void {
       );
       INSERT INTO task_claims(task_id, file_path, session_id, claimed_at)
         SELECT task_id, file_path, session_id, claimed_at FROM task_claims_new;
+      DROP TABLE task_claims_new;
+      CREATE INDEX IF NOT EXISTS idx_task_claims_session ON task_claims(session_id);
+    `);
+  } finally {
+    db.close();
+  }
+}
+
+function rewriteTaskClaimsWithOldStateCheck(dbPath: string): void {
+  const db = new Database(dbPath);
+  try {
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      ALTER TABLE task_claims RENAME TO task_claims_new;
+      CREATE TABLE task_claims (
+        task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+        file_path TEXT NOT NULL,
+        session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+        claimed_at INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT 'active' CHECK(state IN ('active','handoff_pending')),
+        expires_at INTEGER,
+        handoff_observation_id INTEGER REFERENCES observations(id) ON DELETE SET NULL,
+        PRIMARY KEY (task_id, file_path)
+      );
+      INSERT INTO task_claims(task_id, file_path, session_id, claimed_at, state, expires_at, handoff_observation_id)
+        SELECT task_id, file_path, session_id, claimed_at, state, expires_at, handoff_observation_id
+        FROM task_claims_new;
       DROP TABLE task_claims_new;
       CREATE INDEX IF NOT EXISTS idx_task_claims_session ON task_claims(session_id);
     `);
