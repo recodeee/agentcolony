@@ -37,6 +37,7 @@ describe('Colony CLI program', () => {
       'status',
       'stop',
       'suggest',
+      'task',
       'viewer',
       'worktree',
     ].sort();
@@ -87,6 +88,7 @@ describe('Colony CLI program', () => {
         search [options] <query>            Query memory from the terminal
         suggest [options] <description...>  Suggest an approach from similar past
                                             task history
+        task                                Task scheduling helpers
         compress [options] <file>           Compress a file in place (.original
                                             backup created)
         expand <file>                       Expand abbreviations in a file

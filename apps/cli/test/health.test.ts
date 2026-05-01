@@ -42,6 +42,7 @@ interface TestTask {
   id: number;
   repo_root: string;
   branch: string;
+  status?: string;
 }
 
 interface TestObservation {
@@ -204,6 +205,7 @@ describe('colony health payload', () => {
     expect(payload.task_list_vs_task_ready_for_agent).toMatchObject({
       task_list_calls: 2,
       task_ready_for_agent_calls: 1,
+      task_list_first_sessions: 2,
       task_ready_share: 1 / 3,
     });
     expect(payload.task_post_vs_task_message).toMatchObject({
@@ -382,6 +384,7 @@ describe('colony health payload', () => {
     expect(text).toContain('Next fixes');
     expect(text).toContain('Adoption thresholds');
     expect(text).toContain('task_list > task_ready_for_agent');
+    expect(text).toContain('task_list-first sessions: 2');
     expect(text).not.toContain('\n  Good\n');
     expect(text).not.toContain('\n  Bad\n');
   });
@@ -1744,9 +1747,11 @@ describe('colony health payload', () => {
           edits_claimed_before: 0,
         },
         tasks: [
+          { id: 9, repo_root: '/r', branch: 'spec/waves', status: 'open' },
           { id: 10, repo_root: '/r', branch: 'spec/waves/sub-0' },
           { id: 11, repo_root: '/r', branch: 'spec/waves/sub-1' },
           { id: 12, repo_root: '/r', branch: 'spec/waves/sub-2' },
+          { id: 14, repo_root: '/r', branch: 'spec/done', status: 'open' },
           { id: 13, repo_root: '/r', branch: 'spec/done/sub-0' },
         ],
         observationsByTask: {
@@ -3166,6 +3171,7 @@ function nearestClaimExample(
 function healthyTasks(): TestTask[] {
   return [
     { id: 1, repo_root: '/r', branch: 'b' },
+    { id: 5, repo_root: '/r', branch: 'spec/plan', status: 'open' },
     { id: 2, repo_root: '/r', branch: 'spec/plan/sub-0' },
     { id: 3, repo_root: '/r', branch: 'spec/plan/sub-1' },
     { id: 4, repo_root: '/r', branch: 'spec/plan/sub-2' },
