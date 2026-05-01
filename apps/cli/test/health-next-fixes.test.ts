@@ -367,6 +367,46 @@ describe('colony health next fixes', () => {
     expect(nextFixes).not.toContain('Wire OMX/Codex/Claude runtime');
   });
 
+  it('keeps the health focus explicit when no action is visible', () => {
+    const payload = buildColonyHealthPayload(
+      fakeStorage({
+        calls: [
+          call(1, 'session-a', 'mcp__colony__hivemind_context', NOW - 90_000),
+          call(2, 'session-a', 'mcp__colony__attention_inbox', NOW - 89_000),
+          call(3, 'session-a', 'mcp__colony__task_ready_for_agent', NOW - 88_000),
+          call(4, 'session-a', 'mcp__colony__task_claim_file', NOW - 87_000),
+          call(5, 'session-a', 'Edit', NOW - 86_000),
+        ],
+        claimBeforeEdit: {
+          edit_tool_calls: 1,
+          edits_with_file_path: 1,
+          edits_claimed_before: 1,
+          pre_tool_use_signals: 1,
+        },
+      }),
+      {
+        since: SINCE,
+        window_hours: 24,
+        now: NOW,
+        codex_sessions_root: NO_CODEX_ROOT,
+      },
+    );
+    const clearPayload = {
+      ...payload,
+      readiness_summary: Object.fromEntries(
+        Object.entries(payload.readiness_summary).map(([key, item]) => [
+          key,
+          { ...item, status: 'good' as const },
+        ]),
+      ) as typeof payload.readiness_summary,
+      action_hints: [],
+    };
+
+    const focus = outputSection(formatColonyHealthOutput(clearPayload), 'Health focus');
+    expect(focus).toContain('status: clear');
+    expect(focus).toContain('next action: none');
+  });
+
   it('prioritizes bridge, quota relay, and ready Queen claims over generic claim advice', () => {
     const payload = buildColonyHealthPayload(
       fakeStorage({
@@ -441,7 +481,7 @@ describe('colony health next fixes', () => {
     const nextFixes = outputSection(formatColonyHealthOutput(payload), 'Next fixes');
     expect(nextFixes).toContain('1. OMX runtime bridge');
     expect(nextFixes).toContain('2. quota relay accept/release');
-    expect(nextFixes).toContain('3. Queen ready subtask claim');
+    expect(nextFixes).toContain('3. Queen activation/claim');
     expect(nextFixes).toContain(
       'Wire the OMX runtime summary/lifecycle bridge so health can measure live edits, quota exits, and pre_tool_use before recommending claim discipline.',
     );
@@ -449,12 +489,24 @@ describe('colony health next fixes', () => {
       'Accept the quota relay, decline/reroute it, or release expired quota-pending claims',
     );
     expect(nextFixes).toContain(
-      'Claim the ready Queen subtask with task_plan_claim_subtask before starting implementation.',
+      'Reactivate Queen planning or claim/requeue the existing plan subtask',
     );
     expect(nextFixes).not.toContain('Call task_claim_file');
     expect(nextFixes).not.toContain('mcp__colony__task_claim_file');
 
     const text = formatColonyHealthOutput(payload);
+    const focus = outputSection(text, 'Health focus');
+    expect(focus).toContain('status: 3 bad readiness area(s)');
+    expect(focus).toContain(
+      'bad areas: execution_safety, queen_plan_readiness, signal_evaporation',
+    );
+    expect(focus).toContain('top blocker: OMX runtime bridge: unavailable');
+    expect(focus).toContain(
+      'next action: Wire the OMX runtime summary/lifecycle bridge so health can measure live edits, quota exits, and pre_tool_use before recommending claim discipline.',
+    );
+    expect(focus).toContain(
+      'cmd:  colony bridge lifecycle --json --ide <ide> --cwd <repo_root> < colony-omx-lifecycle-v1.pre.json',
+    );
     expect(text).toContain('measurement: measurable_edits=1, unmeasurable_edits=0');
     expect(text).toContain('reason: insufficient runtime metadata or bridge unavailable');
 
@@ -538,6 +590,9 @@ describe('colony health next fixes', () => {
     });
 
     const text = formatColonyHealthOutput(payload);
+    const focus = outputSection(text, 'Health focus');
+    expect(focus).toContain('top blocker: OMX runtime bridge: unavailable');
+    expect(focus).toContain('hidden follow-ups:');
     const nextFixes = outputSection(text, 'Next fixes');
     expect(nextFixes).toContain('1. OMX runtime bridge');
     expect(nextFixes).toContain('2. quota relay accept/release');
