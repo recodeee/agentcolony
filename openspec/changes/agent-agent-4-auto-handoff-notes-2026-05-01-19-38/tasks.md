@@ -21,4 +21,7 @@
 
 ## Cleanup
 
-- [ ] Finish PR, merge, and sandbox cleanup; record PR URL and `MERGED` evidence.
+- [x] Finish PR, merge, and sandbox cleanup; record PR URL and `MERGED` evidence.
+  - PR: https://github.com/recodeee/agentcolony/pull/349
+  - Merge evidence: `gh pr view agent/agent-4/auto-handoff-notes-2026-05-01-19-38 --json url,state,number,mergeCommit,headRefName,baseRefName` returned `state=MERGED`, `number=349`, and merge commit `037c8fc441259164699df9065fb8f8a9282147c6`.
+  - Cleanup evidence: `git worktree list` no longer lists `colony__agent-4__auto-handoff-notes-2026-05-01-19-38`, and `git branch --list agent/agent-4/auto-handoff-notes-2026-05-01-19-38` returned no local branch.
