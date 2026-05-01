@@ -902,6 +902,93 @@ describe('task_ready_for_agent', () => {
     });
   });
 
+  it('surfaces released weak-expired quota relays as replacement work', async () => {
+    const t0 = Date.parse('2026-05-01T12:00:00.000Z');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(t0);
+    const { taskId, relayId, filePath, branch } = openQuotaRelayTask({
+      expires_in_ms: 60_000,
+    });
+    new TaskThread(store, taskId).join('agent-session', 'codex');
+
+    vi.setSystemTime(t0 + 2 * 60_000);
+    await call('task_claim_quota_release_expired', {
+      task_id: taskId,
+      session_id: 'agent-session',
+    });
+    expect(store.storage.getClaim(taskId, filePath)).toMatchObject({
+      session_id: 'quota-session',
+      state: 'weak_expired',
+      handoff_observation_id: relayId,
+    });
+
+    await call('task_plan_publish', {
+      ...publishArgs(
+        [
+          {
+            title: 'Ordinary available API',
+            description: 'Ready but lower priority than expired replacement work.',
+            file_scope: ['apps/api/ordinary-after-expired.ts'],
+            capability_hint: 'api_work',
+          },
+          {
+            title: 'Ordinary available docs',
+            description: 'Dependent docs task keeps the test plan shape valid.',
+            file_scope: ['docs/ordinary-after-expired.md'],
+            depends_on: [0],
+            capability_hint: 'doc_work',
+          },
+        ],
+        { slug: 'ordinary-after-expired-plan' },
+      ),
+    });
+
+    const result = await call<ReadyResult>('task_ready_for_agent', {
+      session_id: 'agent-session',
+      agent: 'codex',
+      repo_root: repoRoot,
+      limit: 10,
+    });
+
+    const quota = result.ready[0] as unknown as QuotaRelayReadyEntry;
+    expect(result.total_available).toBe(2);
+    expect(quota).toMatchObject({
+      kind: 'quota_relay_ready',
+      task_id: taskId,
+      files: [filePath],
+      branch,
+      expires_at: t0 + 60_000,
+      quota_observation_id: relayId,
+      quota_observation_kind: 'relay',
+      claim_args: {
+        repo_root: repoRoot,
+        branch,
+        task_id: taskId,
+        quota_observation_id: relayId,
+        session_id: 'agent-session',
+        agent: 'codex',
+        files: [filePath],
+      },
+    });
+    expect(result.ready[1]).toMatchObject({
+      plan_slug: 'ordinary-after-expired-plan',
+      subtask_index: 0,
+    });
+    expect(result.next_tool).toBe('task_claim_quota_accept');
+
+    const accepted = await call<QuotaAcceptResult>(quota.next_tool, quota.claim_args);
+    expect(accepted).toEqual({
+      status: 'claimed_expired_quota',
+      task_id: taskId,
+      quota_observation_id: relayId,
+      files: [filePath],
+    });
+    expect(store.storage.getClaim(taskId, filePath)).toMatchObject({
+      session_id: 'agent-session',
+      state: 'active',
+    });
+  });
+
   it('keeps legacy quota accept args valid after ready queue exposes rich claim args', async () => {
     const { taskId, relayId, filePath } = openQuotaRelayTask({});
     new TaskThread(store, taskId).join('agent-session', 'codex');
